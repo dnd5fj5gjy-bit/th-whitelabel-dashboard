@@ -15,6 +15,7 @@ import {
   X,
   Bell,
   ArrowLeft,
+  Wand2,
 } from 'lucide-react';
 import { useStore } from '../hooks/useStore.jsx';
 import { CATEGORIES, PIPELINE_STAGES, PIPELINE_STAGE_LABELS } from '../lib/partners.js';
@@ -23,6 +24,7 @@ const NAV_ITEMS = [
   { key: 'pipeline', label: 'Pipeline', icon: Kanban },
   { key: 'outreach', label: 'AI Outreach', icon: Sparkles },
   { key: 'analytics', label: 'Analytics', icon: BarChart3 },
+  { key: 'ai-populate', label: 'AI Populate', icon: Wand2 },
   { key: 'partnership-page', label: 'Partnership Page', icon: Globe },
   { key: 'agreements', label: 'Agreements', icon: FileText },
   { key: 'settings', label: 'Settings', icon: Settings },

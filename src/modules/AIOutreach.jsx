@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useStore } from '../hooks/useStore';
 import { askClaude } from '../lib/ai';
+import storage from '../lib/storage';
 import { PIPELINE_STAGES } from '../lib/partners';
 import { differenceInDays, format } from 'date-fns';
 import {
   Sparkles, Copy, Check, Send, ChevronDown, ChevronRight, Loader2, Clock, User,
-  Building2, Zap, Mail, FileText, Trash2, ArrowRight
+  Building2, Zap, Mail, FileText, Trash2, ArrowRight, X
 } from 'lucide-react';
 
 const OUTREACH_TYPES = [
@@ -91,6 +92,8 @@ export default function AIOutreach({ params, onNavigate }) {
   const [logged, setLogged] = useState(false);
   const [history, setHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [preGenerated, setPreGenerated] = useState(null);
+  const [showPreGenerated, setShowPreGenerated] = useState(true);
 
   // Auto-select partner from params — bulletproof: run every time params change
   useEffect(() => {
@@ -112,8 +115,13 @@ export default function AIOutreach({ params, onNavigate }) {
     if (partner) {
       setOutreachType(getSmartDefault(partner));
       setHistory(getOutreachHistory(partner.id));
+      // Load pre-generated outreach from AI Populate
+      const cached = storage.get(`outreach:${partner.id}`, null);
+      setPreGenerated(cached);
+      setShowPreGenerated(true);
     } else {
       setHistory([]);
+      setPreGenerated(null);
     }
   }, [partner?.id, partner?.pipelineStage]);
 
@@ -291,6 +299,53 @@ ${outreachType !== 'call-prep' ? 'Format your response as:\nSUBJECT: [subject li
               {partner.contactName}
             </span>
           )}
+        </div>
+      )}
+
+      {/* Pre-generated draft from AI Populate */}
+      {partner && preGenerated && showPreGenerated && !output && (
+        <div className="rounded-lg border border-[#2ECC71]/30 bg-[#0F2318] overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#1A3D26] bg-[#2ECC71]/5">
+            <div className="flex items-center gap-2 text-sm">
+              <Sparkles size={14} className="text-[#2ECC71]" />
+              <span className="text-[#2ECC71] font-medium">Pre-generated Draft</span>
+              <span className="text-xs text-[#7DB892]">from AI Populate</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setOutput(preGenerated);
+                  setOutreachType(preGenerated.type || 'touch-1');
+                  setCopied(false);
+                  setLogged(false);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs bg-[#1A6B3C] hover:bg-[#2ECC71]/80 text-white transition-colors"
+              >
+                Use Draft
+              </button>
+              <button
+                onClick={() => setShowPreGenerated(false)}
+                className="text-[#7DB892] hover:text-[#F0F7F2] transition-colors"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+          <div className="p-4 space-y-2">
+            {preGenerated.subject && (
+              <div className="text-xs text-[#F0F7F2] font-medium">
+                <span className="text-[#7DB892]">Subject:</span> {preGenerated.subject}
+              </div>
+            )}
+            <div className="text-xs text-[#7DB892] line-clamp-3 whitespace-pre-wrap">
+              {preGenerated.body}
+            </div>
+            {preGenerated.generatedAt && (
+              <div className="text-[10px] text-[#7DB892]/40">
+                Generated {format(new Date(preGenerated.generatedAt), 'd MMM HH:mm')}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

@@ -6,11 +6,12 @@ import AIOutreach from './modules/AIOutreach.jsx';
 import Analytics from './modules/Analytics.jsx';
 import PartnershipPage from './modules/PartnershipPage.jsx';
 import AgreementHub from './modules/AgreementHub.jsx';
+import AIPopulate from './modules/AIPopulate.jsx';
 import Settings from './modules/Settings.jsx';
 import PartnerProfile from './modules/PartnerProfile.jsx';
 import { Lock } from 'lucide-react';
 
-const PASSWORD = 'BW';
+const PASSWORD = 'TH';
 
 function PasswordGate({ onUnlock }) {
   const [pw, setPw] = useState('');
@@ -110,6 +111,7 @@ function Dashboard() {
       pipeline: 'Pipeline',
       outreach: 'AI Outreach',
       analytics: 'Analytics',
+      'ai-populate': 'AI Command Centre',
       'partnership-page': 'Partnership Page',
       agreements: 'Agreements',
       settings: 'Settings',
@@ -153,6 +155,8 @@ function Dashboard() {
         return <AIOutreach params={moduleParams} onNavigate={handleNavigate} />;
       case 'analytics':
         return <Analytics onNavigate={handleNavigate} />;
+      case 'ai-populate':
+        return <AIPopulate onNavigate={handleNavigate} />;
       case 'partnership-page':
         return <PartnershipPage />;
       case 'agreements':

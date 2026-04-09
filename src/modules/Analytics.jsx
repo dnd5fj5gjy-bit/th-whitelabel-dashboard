@@ -2,9 +2,10 @@ import { useState, useMemo } from 'react';
 import { useStore } from '../hooks/useStore';
 import { PIPELINE_STAGES, PIPELINE_STAGE_LABELS, CATEGORIES } from '../lib/partners';
 import { differenceInDays, subDays, format } from 'date-fns';
+import storage from '../lib/storage';
 import {
   BarChart3, Users, Target, HandshakeIcon, AlertTriangle, TrendingUp,
-  Zap, Lock, ArrowRight, Clock, Sparkles, Activity, Phone, Mail, ChevronRight
+  Zap, Lock, ArrowRight, Clock, Sparkles, Activity, Phone, Mail, ChevronRight, Wand2
 } from 'lucide-react';
 
 const CATEGORY_COLORS = {
@@ -207,8 +208,46 @@ export default function Analytics({ onNavigate }) {
     setDrilldownCategory(drilldownCategory === category ? null : category);
   }
 
+  // AI content status
+  const aiContentStatus = useMemo(() => {
+    let withContent = 0;
+    active.forEach(p => {
+      const hasOutreach = !!storage.get(`outreach:${p.id}`, null);
+      const hasIntel = !!storage.get(`intel:${p.id}`, null);
+      if (hasOutreach && hasIntel) withContent++;
+    });
+    return { withContent, total: active.length };
+  }, [active]);
+
   return (
     <div className="space-y-6">
+      {/* AI Auto-Populate Banner */}
+      <div className="rounded-lg border border-[#2ECC71]/30 bg-gradient-to-r from-[#0F2318] to-[#1A6B3C]/20 px-5 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-[#2ECC71]/20 flex items-center justify-center">
+            <Wand2 size={20} className="text-[#2ECC71]" />
+          </div>
+          <div>
+            <div className="text-sm font-semibold text-[#F0F7F2]">AI Auto-Populate</div>
+            <div className="text-xs text-[#7DB892]">
+              Generate outreach and intel for all partners --{' '}
+              <span className="text-[#2ECC71] font-mono">{aiContentStatus.withContent}</span>
+              <span className="text-[#7DB892]"> of </span>
+              <span className="text-[#F0F7F2] font-mono">{aiContentStatus.total}</span>
+              <span className="text-[#7DB892]"> partners have AI content</span>
+            </div>
+          </div>
+        </div>
+        <button
+          onClick={() => onNavigate?.('ai-populate')}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1A6B3C] hover:bg-[#2ECC71]/80 text-white text-sm font-medium transition-colors shadow-lg shadow-[#2ECC71]/10"
+        >
+          <Sparkles size={14} />
+          Open AI Command Centre
+          <ArrowRight size={14} />
+        </button>
+      </div>
+
       {/* Overdue banner */}
       {overdue.length > 0 && (
         <div className="rounded-lg border border-[#C0392B]/40 bg-[#C0392B]/10 px-4 py-3 flex items-center justify-between">

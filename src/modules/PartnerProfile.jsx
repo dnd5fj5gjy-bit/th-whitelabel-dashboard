@@ -20,6 +20,9 @@ import {
   RefreshCw,
   Calendar,
   MessageCircle,
+  ChevronDown,
+  ChevronRight,
+  Copy,
 } from 'lucide-react';
 import { useStore } from '../hooks/useStore.jsx';
 import {
@@ -31,7 +34,8 @@ import {
   INTERACTION_TYPES,
   AGREEMENT_STATUSES,
 } from '../lib/partners.js';
-import { generateOutreach, generateAISummary } from '../lib/ai.js';
+import { generateOutreach, generateAISummary, askClaude } from '../lib/ai.js';
+import storage from '../lib/storage.js';
 import { format } from 'date-fns';
 
 const CATEGORY_COLORS = {
@@ -227,6 +231,15 @@ export default function PartnerProfile({ partner, onClose, onNavigate }) {
   const [aiSummary, setAiSummary] = useState(() => getCachedSummary(partner.id));
   const [aiError, setAiError] = useState('');
 
+  // Pre-generated outreach and intel from AI Populate
+  const [cachedOutreach, setCachedOutreach] = useState(() => storage.get(`outreach:${partner.id}`, null));
+  const [cachedIntel, setCachedIntel] = useState(() => storage.get(`intel:${partner.id}`, null));
+  const [showOutreach, setShowOutreach] = useState(false);
+  const [showIntel, setShowIntel] = useState(true);
+  const [outreachCopied, setOutreachCopied] = useState(false);
+  const [generatingContent, setGeneratingContent] = useState(false);
+  const [genContentError, setGenContentError] = useState('');
+
   // Sorted interactions
   const sortedInteractions = useMemo(() => {
     let items = [...(partner.interactions || [])];
@@ -279,6 +292,49 @@ export default function PartnerProfile({ partner, onClose, onNavigate }) {
       setAiLoading(false);
     }
   };
+
+  const handleCopyOutreach = useCallback(() => {
+    if (!cachedOutreach) return;
+    const text = cachedOutreach.subject
+      ? `Subject: ${cachedOutreach.subject}\n\n${cachedOutreach.body}`
+      : (cachedOutreach.body || '');
+    navigator.clipboard.writeText(text);
+    setOutreachCopied(true);
+    setTimeout(() => setOutreachCopied(false), 2000);
+  }, [cachedOutreach]);
+
+  const handleGenerateAIContent = useCallback(async () => {
+    setGeneratingContent(true);
+    setGenContentError('');
+    try {
+      const outreachSystemPrompt = `You are a senior commercial partnerships manager at Ted's Health, the UK's only licensable B2B clinical platform for TRT (Testosterone Replacement Therapy) and ED (Erectile Dysfunction). Ted's Health offers a fully white-label platform allowing partners to offer TRT and ED services entirely under their own brand, with two operating models: FULL_SERVICE (Ted's provides the doctors, pharmacy, labs, nursing, prescribing licence and CQC registration — zero clinical infrastructure required from the partner) and PLATFORM_ONLY (partner brings their own GMC-registered doctors and CQC registration — Ted's provides only the technology, pharmacy integration via SignatureRx, labs via Inuvi, and patient management platform). Ted's Health is building its first cohort of white-label partners for a Q3 2026 launch. You write outreach that is personalised, insight-led, and never generic. You reference specific gaps in the partner's offering. You never mention Ted's Health in ways that break the white-label premise. You are direct, commercial, and concise.`;
+      const outreachPrompt = `Write a Touch 1 cold outreach email to ${partner.name}.\n\nPartner: ${partner.name}\nCategory: ${partner.category}\nOperating Mode: ${partner.operatingMode}\nPartner Score: ${partner.score}/100\nED Services: ${partner.edStatus ? 'Currently offers ED' : 'Does not offer ED'}\nTRT Services: ${partner.trtStatus ? 'Currently offers TRT' : 'Does not offer TRT'}\nWave: ${partner.wave}\n${partner.contactName ? `Contact Person: ${partner.contactName}` : ''}\n${partner.contactJobTitle ? `Job Title: ${partner.contactJobTitle}` : ''}\n${partner.website ? `Website: ${partner.website}` : ''}\n${partner.notes ? `Notes: ${partner.notes}` : ''}\n\nThis is the first contact. Make it personalised, insight-led, and reference a specific gap in their current offering. Keep it concise -- under 200 words for the body.\n\nFormat your response as:\nSUBJECT: [subject line]\n\n[email body]`;
+
+      const outreachResult = await askClaude(outreachSystemPrompt, outreachPrompt, 1024);
+      let subject = '';
+      let body = outreachResult;
+      const subjectMatch = outreachResult.match(/^SUBJECT:\s*(.+?)(?:\n|$)/im);
+      if (subjectMatch) {
+        subject = subjectMatch[1].trim();
+        body = outreachResult.slice(subjectMatch.index + subjectMatch[0].length).trim();
+      }
+      const outreachData = { subject, body, type: 'touch-1', generatedAt: new Date().toISOString() };
+      storage.set(`outreach:${partner.id}`, outreachData);
+      setCachedOutreach(outreachData);
+
+      const intelSystemPrompt = `You are a B2B intelligence analyst for Ted's Health. Provide a brief business overview of the target company, focusing on: what they do, their current service gaps (particularly around TRT/ED), why a white-label partnership would benefit them, key talking points for a discovery call, and potential objections to anticipate. Be specific and commercially focused. Under 200 words.`;
+      const intelPrompt = `Target Company: ${partner.name}\nCategory: ${partner.category}\nOperating Mode: ${partner.operatingMode}\nPartner Score: ${partner.score}/100\nED Services: ${partner.edStatus ? 'Currently offers ED' : 'Does not offer ED'}\nTRT Services: ${partner.trtStatus ? 'Currently offers TRT' : 'Does not offer TRT'}\n${partner.website ? `Website: ${partner.website}` : ''}\n${partner.notes ? `Notes: ${partner.notes}` : ''}\n\nProvide the business intelligence brief.`;
+
+      const intelResult = await askClaude(intelSystemPrompt, intelPrompt, 512);
+      const intelData = { text: intelResult, generatedAt: new Date().toISOString() };
+      storage.set(`intel:${partner.id}`, intelData);
+      setCachedIntel(intelData);
+    } catch (err) {
+      setGenContentError(err.message);
+    } finally {
+      setGeneratingContent(false);
+    }
+  }, [partner]);
 
   const handleOpenAgreement = useCallback(() => {
     if (onNavigate) {
@@ -361,6 +417,101 @@ export default function PartnerProfile({ partner, onClose, onNavigate }) {
               })}
             </div>
           </div>
+
+          {/* Business Intelligence — from AI Populate */}
+          {cachedIntel && (
+            <div className="px-5 py-3 border-b border-[#1A3D26]">
+              <button
+                onClick={() => setShowIntel(!showIntel)}
+                className="flex items-center justify-between w-full mb-2"
+              >
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-[#7DB892] flex items-center gap-1.5">
+                  <Sparkles size={12} className="text-[#2ECC71]" />
+                  Business Intelligence
+                </h3>
+                {showIntel ? <ChevronDown size={14} className="text-[#7DB892]" /> : <ChevronRight size={14} className="text-[#7DB892]" />}
+              </button>
+              {showIntel && (
+                <div className="text-sm text-[#F0F7F2] bg-[#0F2318] rounded-md p-3 whitespace-pre-wrap border border-[#1A6B3C]/30">
+                  {cachedIntel.text}
+                  {cachedIntel.generatedAt && (
+                    <div className="text-[10px] text-[#7DB892]/50 mt-2">
+                      Generated {format(new Date(cachedIntel.generatedAt), 'dd MMM yyyy, HH:mm')}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Generated Outreach — from AI Populate */}
+          {cachedOutreach && (
+            <div className="px-5 py-3 border-b border-[#1A3D26]">
+              <button
+                onClick={() => setShowOutreach(!showOutreach)}
+                className="flex items-center justify-between w-full mb-2"
+              >
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-[#7DB892] flex items-center gap-1.5">
+                  <Mail size={12} className="text-[#2ECC71]" />
+                  Generated Outreach
+                </h3>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleCopyOutreach(); }}
+                    className="flex items-center gap-1 text-xs text-[#7DB892] hover:text-[#2ECC71] transition-colors"
+                  >
+                    {outreachCopied ? <CheckCircle size={10} className="text-[#2ECC71]" /> : <Copy size={10} />}
+                    {outreachCopied ? 'Copied' : 'Copy'}
+                  </button>
+                  {showOutreach ? <ChevronDown size={14} className="text-[#7DB892]" /> : <ChevronRight size={14} className="text-[#7DB892]" />}
+                </div>
+              </button>
+              {showOutreach && (
+                <div className="space-y-2">
+                  {cachedOutreach.subject && (
+                    <div className="text-xs text-[#F0F7F2] font-medium bg-[#0A1A12] rounded-md px-3 py-2 border border-[#1A3D26]">
+                      <span className="text-[#7DB892] text-[10px] uppercase tracking-wider">Subject: </span>
+                      {cachedOutreach.subject}
+                    </div>
+                  )}
+                  <div className="text-sm text-[#F0F7F2] bg-[#0F2318] rounded-md p-3 whitespace-pre-wrap border border-[#1A6B3C]/30">
+                    {cachedOutreach.body}
+                    {cachedOutreach.generatedAt && (
+                      <div className="text-[10px] text-[#7DB892]/50 mt-2">
+                        Generated {format(new Date(cachedOutreach.generatedAt), 'dd MMM yyyy, HH:mm')}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Generate AI Content button — shown if neither outreach nor intel exists */}
+          {!cachedOutreach && !cachedIntel && (
+            <div className="px-5 py-3 border-b border-[#1A3D26]">
+              <button
+                onClick={handleGenerateAIContent}
+                disabled={generatingContent}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#1A6B3C] to-[#2ECC71]/60 hover:from-[#2ECC71]/80 hover:to-[#2ECC71] text-white text-sm font-medium transition-all disabled:opacity-50"
+              >
+                {generatingContent ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    Generating AI Content...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={14} />
+                    Generate AI Content
+                  </>
+                )}
+              </button>
+              {genContentError && (
+                <div className="mt-2 text-xs text-[#C0392B]">{genContentError}</div>
+              )}
+            </div>
+          )}
 
           {/* Agreement status */}
           <div className="px-5 py-3 border-b border-[#1A3D26] flex items-center gap-4">
