@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Kanban,
+  Users,
   Sparkles,
   BarChart3,
   Globe,
@@ -22,6 +23,7 @@ import { CATEGORIES, PIPELINE_STAGES, PIPELINE_STAGE_LABELS } from '../lib/partn
 
 const NAV_ITEMS = [
   { key: 'pipeline', label: 'Pipeline', icon: Kanban },
+  { key: 'partners', label: 'Partner Profiles', icon: Users },
   { key: 'outreach', label: 'AI Outreach', icon: Sparkles },
   { key: 'analytics', label: 'Analytics', icon: BarChart3 },
   { key: 'ai-populate', label: 'AI Populate', icon: Wand2 },
