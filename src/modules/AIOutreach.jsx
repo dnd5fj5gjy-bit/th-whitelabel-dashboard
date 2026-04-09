@@ -349,23 +349,46 @@ ${outreachType !== 'call-prep' ? 'Format your response as:\nSUBJECT: [subject li
         </div>
       )}
 
-      {/* Output type tab bar */}
+      {/* Output type selection — descriptive cards */}
       {partner && (
-        <div className="flex items-center gap-1 bg-[#0A1A12] rounded-lg p-1 border border-[#1A3D26]">
-          {OUTREACH_TYPES.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setOutreachType(t.id)}
-              className={`flex-1 px-3 py-2 rounded-md text-xs font-medium transition-all ${
-                outreachType === t.id
-                  ? 'bg-[#1A6B3C] text-white shadow-sm'
-                  : 'text-[#7DB892] hover:text-[#F0F7F2] hover:bg-[#0F2318]'
-              }`}
-              title={t.desc}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-xs text-[#7DB892]">
+            <Mail size={12} />
+            <span>Select outreach type</span>
+            <span className="text-[#4a7a5a]">
+              — Smart pick: <span className="text-[#2ECC71]">{OUTREACH_TYPES.find(t => t.id === getSmartDefault(partner))?.label}</span> based on {partner.pipelineStage.replace('-', ' ')} stage
+            </span>
+          </div>
+          <div className="space-y-1.5">
+            {OUTREACH_TYPES.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setOutreachType(t.id)}
+                className={`w-full text-left px-4 py-3 rounded-lg border transition-all ${
+                  outreachType === t.id
+                    ? 'border-[#2ECC71]/50 bg-[#1A6B3C]/20'
+                    : 'border-[#1A3D26] bg-[#0F2318] hover:border-[#1A6B3C]/30 hover:bg-[#0F2318]/80'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                    outreachType === t.id ? 'border-[#2ECC71]' : 'border-[#1A3D26]'
+                  }`}>
+                    {outreachType === t.id && <div className="w-1.5 h-1.5 rounded-full bg-[#2ECC71]" />}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-sm font-medium ${outreachType === t.id ? 'text-[#2ECC71]' : 'text-[#F0F7F2]'}`}>{t.label}</span>
+                      {t.id === getSmartDefault(partner) && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#2ECC71]/10 text-[#2ECC71] font-medium uppercase tracking-wider">Recommended</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-[#7DB892] mt-0.5">{t.desc}</p>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -380,31 +403,25 @@ ${outreachType !== 'call-prep' ? 'Format your response as:\nSUBJECT: [subject li
         />
       )}
 
-      {/* Smart default hint + Generate button */}
+      {/* Generate button at bottom */}
       {partner && (
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleGenerate}
-            disabled={!partner || loading || (outreachType === 'custom' && !customInstruction.trim())}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[#1A6B3C] hover:bg-[#2ECC71]/80 text-white font-medium text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {loading ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                Generating...
-              </>
-            ) : (
-              <>
-                <Sparkles size={16} />
-                Generate
-              </>
-            )}
-          </button>
-          <span className="text-xs text-[#4a7a5a]">
-            Smart pick: <span className="text-[#7DB892]">{OUTREACH_TYPES.find(t => t.id === getSmartDefault(partner))?.label}</span>
-            {' '}based on <span className="text-[#7DB892] capitalize">{partner.pipelineStage.replace('-', ' ')}</span> stage
-          </span>
-        </div>
+        <button
+          onClick={handleGenerate}
+          disabled={!partner || loading || (outreachType === 'custom' && !customInstruction.trim())}
+          className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-lg bg-[#1A6B3C] hover:bg-[#2ECC71]/80 text-white font-medium text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {loading ? (
+            <>
+              <Loader2 size={16} className="animate-spin" />
+              Generating {OUTREACH_TYPES.find(t => t.id === outreachType)?.label}...
+            </>
+          ) : (
+            <>
+              <Sparkles size={16} />
+              Generate {OUTREACH_TYPES.find(t => t.id === outreachType)?.label}
+            </>
+          )}
+        </button>
       )}
 
       {/* Loading skeleton */}
