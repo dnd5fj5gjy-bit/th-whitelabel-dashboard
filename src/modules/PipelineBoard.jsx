@@ -1,21 +1,23 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   Plus,
   Filter,
   Archive,
   Download,
   ChevronDown,
+  ChevronUp,
   GripVertical,
   MessageSquare,
   Eye,
   EyeOff,
   X,
   ArrowRight,
+  Check,
+  Undo2,
 } from 'lucide-react';
 import { useStore } from '../hooks/useStore.jsx';
 import { PIPELINE_STAGES, PIPELINE_STAGE_LABELS, CATEGORIES, OPERATING_MODES, WAVES } from '../lib/partners.js';
 import { formatDistanceToNow, differenceInDays } from 'date-fns';
-import PartnerProfile from './PartnerProfile.jsx';
 
 // Category color map
 const CATEGORY_COLORS = {
@@ -34,19 +36,180 @@ const MODE_COLORS = {
   CHECK: { bg: 'bg-amber-900/50', text: 'text-amber-400' },
 };
 
+const EMPTY_STATE_MESSAGES = {
+  identified: 'Drag partners here or click + to add new ones',
+  contacted: 'Partners you\'ve reached out to appear here',
+  replied: 'Partners who responded to your outreach',
+  'call-booked': 'Partners with scheduled discovery calls',
+  'proposal-sent': 'Partners who received your proposal',
+  negotiating: 'Active negotiations with partners',
+  signed: 'Signed partnerships — congrats!',
+  dead: 'Partners that didn\'t work out',
+};
+
 function getDaysSinceLastContact(partner) {
   if (!partner.interactions || partner.interactions.length === 0) return null;
   const sorted = [...partner.interactions].sort((a, b) => new Date(b.date) - new Date(a.date));
   return differenceInDays(new Date(), new Date(sorted[0].date));
 }
 
-function PartnerCard({ partner, selected, onToggleSelect, onClick, onLogActivity, onDragStart, onDragEnd }) {
-  const [hovering, setHovering] = useState(false);
+// Inline quick log form that slides out from the card
+function InlineQuickLog({ partner, onLog, onClose }) {
+  const [type, setType] = useState('Email Sent');
+  const [note, setNote] = useState('');
+  const [showDetails, setShowDetails] = useState(false);
+  const [outcome, setOutcome] = useState('');
+  const [nextAction, setNextAction] = useState('');
+  const [nextActionDue, setNextActionDue] = useState('');
+  const inputRef = useRef(null);
+
+  const TYPES = ['Email Sent', 'Email Received', 'Call', 'Meeting', 'Note', 'LinkedIn', 'Other'];
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!note.trim()) return;
+    onLog(partner.id, {
+      type,
+      subject: note.trim(),
+      ...(showDetails && outcome ? { outcome } : {}),
+      ...(showDetails && nextAction ? { nextAction } : {}),
+      ...(showDetails && nextActionDue ? { nextActionDue } : {}),
+    });
+    onClose();
+  };
+
+  return (
+    <div
+      className="mt-2 bg-[#0A1A12] border border-[#2ECC71]/30 rounded-lg p-2.5 space-y-2"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <form onSubmit={handleSubmit} className="space-y-2">
+        <div className="flex gap-2">
+          <select
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+            className="text-[10px] py-1 px-1.5 bg-[#0F2318] border border-[#1A3D26] rounded text-[#F0F7F2] flex-shrink-0"
+          >
+            {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <input
+            ref={inputRef}
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Quick note..."
+            className="flex-1 text-[11px] py-1 px-2 bg-[#0F2318] border border-[#1A3D26] rounded text-[#F0F7F2] placeholder:text-[#7DB892]/40"
+          />
+        </div>
+        {showDetails && (
+          <div className="space-y-1.5">
+            <input
+              type="text"
+              value={outcome}
+              onChange={(e) => setOutcome(e.target.value)}
+              placeholder="Outcome..."
+              className="w-full text-[10px] py-1 px-2 bg-[#0F2318] border border-[#1A3D26] rounded text-[#F0F7F2] placeholder:text-[#7DB892]/40"
+            />
+            <div className="flex gap-1.5">
+              <input
+                type="text"
+                value={nextAction}
+                onChange={(e) => setNextAction(e.target.value)}
+                placeholder="Next action..."
+                className="flex-1 text-[10px] py-1 px-2 bg-[#0F2318] border border-[#1A3D26] rounded text-[#F0F7F2] placeholder:text-[#7DB892]/40"
+              />
+              <input
+                type="date"
+                value={nextActionDue}
+                onChange={(e) => setNextActionDue(e.target.value)}
+                className="text-[10px] py-1 px-1.5 bg-[#0F2318] border border-[#1A3D26] rounded text-[#F0F7F2]"
+              />
+            </div>
+          </div>
+        )}
+        <div className="flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => setShowDetails(!showDetails)}
+            className="text-[10px] text-[#7DB892] hover:text-[#2ECC71]"
+          >
+            {showDetails ? 'Less details' : '+ Add details'}
+          </button>
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-2 py-0.5 text-[10px] text-[#7DB892] hover:text-[#F0F7F2]"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-2.5 py-0.5 text-[10px] bg-[#1A6B3C] hover:bg-[#2ECC71] text-[#F0F7F2] rounded font-medium"
+            >
+              Log
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// Context menu for inline stage change
+function StageContextMenu({ x, y, partner, onMove, onClose }) {
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) onClose();
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [onClose]);
+
+  return (
+    <div
+      ref={menuRef}
+      className="fixed bg-[#0F2318] border border-[#1A3D26] rounded-lg shadow-xl py-1 z-[60] min-w-[150px]"
+      style={{ left: x, top: y }}
+    >
+      <div className="px-3 py-1.5 text-[10px] text-[#7DB892] uppercase tracking-wider border-b border-[#1A3D26]">
+        Move to stage
+      </div>
+      {PIPELINE_STAGES.map((s) => (
+        <button
+          key={s}
+          onClick={() => { onMove(partner.id, s); onClose(); }}
+          className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
+            s === partner.pipelineStage
+              ? 'text-[#2ECC71] bg-[#2ECC71]/10'
+              : 'text-[#F0F7F2] hover:bg-[#1A6B3C]/30'
+          }`}
+        >
+          {PIPELINE_STAGE_LABELS[s]}
+          {s === partner.pipelineStage && <Check size={11} className="inline ml-2" />}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PartnerCard({ partner, selected, onToggleSelect, onClick, onLogActivity, onDragStart, onDragEnd, showInlineLog, onToggleInlineLog, onLogSubmit, onContextMenu }) {
   const daysSince = getDaysSinceLastContact(partner);
   const catColor = CATEGORY_COLORS[partner.category] || { bg: 'bg-gray-900/40', text: 'text-gray-300', border: 'border-gray-700/40' };
   const modeColor = MODE_COLORS[partner.operatingMode] || MODE_COLORS.FULL;
 
   const daysColor = daysSince === null ? 'text-[#7DB892]' : daysSince >= 10 ? 'text-[#C0392B]' : daysSince >= 5 ? 'text-[#E07B00]' : 'text-[#7DB892]';
+
+  const handleContextMenu = (e) => {
+    e.preventDefault();
+    onContextMenu(e, partner);
+  };
 
   return (
     <div
@@ -57,8 +220,7 @@ function PartnerCard({ partner, selected, onToggleSelect, onClick, onLogActivity
         onDragStart?.(partner.id);
       }}
       onDragEnd={onDragEnd}
-      onMouseEnter={() => setHovering(true)}
-      onMouseLeave={() => setHovering(false)}
+      onContextMenu={handleContextMenu}
       className={`rounded-lg border p-3 cursor-grab active:cursor-grabbing transition-all duration-150 ${
         partner.archived
           ? 'border-[#1A3D26]/50 bg-[#0F2318]/50 opacity-50'
@@ -67,9 +229,9 @@ function PartnerCard({ partner, selected, onToggleSelect, onClick, onLogActivity
             : 'border-[#1A3D26] bg-[#0F2318] hover:border-[#2ECC71]/40'
       } ${selected ? 'ring-1 ring-[#2ECC71]' : ''}`}
     >
-      {/* Top row: checkbox + name */}
+      {/* Top row: checkbox + name — checkbox always visible */}
       <div className="flex items-start gap-2">
-        <div className="pt-0.5" style={{ opacity: hovering || selected ? 1 : 0, transition: 'opacity 150ms' }}>
+        <div className="pt-0.5">
           <input
             type="checkbox"
             checked={selected}
@@ -80,14 +242,14 @@ function PartnerCard({ partner, selected, onToggleSelect, onClick, onLogActivity
             className="w-3.5 h-3.5 rounded border-[#1A3D26] bg-[#0A1A12] accent-[#2ECC71] cursor-pointer"
           />
         </div>
-        <div className="flex-1 min-w-0" onClick={() => onClick(partner)}>
+        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onClick(partner)}>
           <div className="font-semibold text-[#F0F7F2] text-sm truncate leading-tight">{partner.name}</div>
         </div>
         <GripVertical size={14} className="text-[#1A3D26] flex-shrink-0 mt-0.5" />
       </div>
 
       {/* Badges */}
-      <div className="flex flex-wrap gap-1.5 mt-2" onClick={() => onClick(partner)}>
+      <div className="flex flex-wrap gap-1.5 mt-2 cursor-pointer" onClick={() => onClick(partner)}>
         <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${catColor.bg} ${catColor.text}`}>
           {partner.category}
         </span>
@@ -97,7 +259,7 @@ function PartnerCard({ partner, selected, onToggleSelect, onClick, onLogActivity
       </div>
 
       {/* Score bar + Wave */}
-      <div className="flex items-center gap-2 mt-2" onClick={() => onClick(partner)}>
+      <div className="flex items-center gap-2 mt-2 cursor-pointer" onClick={() => onClick(partner)}>
         <div className="flex-1 h-1.5 rounded-full bg-[#0A1A12] overflow-hidden">
           <div
             className="h-full rounded-full transition-all"
@@ -125,26 +287,40 @@ function PartnerCard({ partner, selected, onToggleSelect, onClick, onLogActivity
         <button
           onClick={(e) => {
             e.stopPropagation();
-            onLogActivity(partner);
+            onToggleInlineLog(partner.id);
           }}
-          className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] text-[#7DB892] hover:text-[#2ECC71] hover:bg-[#0A1A12] transition-colors"
+          className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] transition-colors ${
+            showInlineLog
+              ? 'text-[#2ECC71] bg-[#2ECC71]/10'
+              : 'text-[#7DB892] hover:text-[#2ECC71] hover:bg-[#0A1A12]'
+          }`}
         >
           <MessageSquare size={11} />
           Log
         </button>
       </div>
+
+      {/* Inline quick log form */}
+      {showInlineLog && (
+        <InlineQuickLog
+          partner={partner}
+          onLog={onLogSubmit}
+          onClose={() => onToggleInlineLog(null)}
+        />
+      )}
     </div>
   );
 }
 
 function AddPartnerModal({ onClose, onAdd }) {
+  const [showMore, setShowMore] = useState(false);
   const [form, setForm] = useState({
     name: '',
     category: CATEGORIES[0],
+    score: 70,
     operatingMode: 'FULL',
     edStatus: true,
     trtStatus: false,
-    score: 70,
     wave: 'W1',
     contactName: '',
     contactEmail: '',
@@ -163,7 +339,7 @@ function AddPartnerModal({ onClose, onAdd }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
       <div
-        className="bg-[#0F2318] border border-[#1A3D26] rounded-lg w-full max-w-lg p-6 shadow-xl"
+        className="bg-[#0F2318] border border-[#1A3D26] rounded-lg w-full max-w-md p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
@@ -173,76 +349,101 @@ function AddPartnerModal({ onClose, onAdd }) {
           </button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-3">
+          {/* Required: 3 fields only */}
           <div>
-            <label className="block text-xs text-[#7DB892] mb-1">Partner Name *</label>
+            <label className="block text-xs text-[#7DB892] mb-1">Company Name *</label>
             <input
               type="text"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               className="w-full"
               autoFocus
+              placeholder="e.g. The Independent Pharmacy"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-[#7DB892] mb-1">Category</label>
+              <label className="block text-xs text-[#7DB892] mb-1">Category *</label>
               <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="w-full">
                 {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs text-[#7DB892] mb-1">Operating Mode</label>
-              <select value={form.operatingMode} onChange={(e) => setForm({ ...form, operatingMode: e.target.value })} className="w-full">
-                {OPERATING_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
-              </select>
+              <label className="block text-xs text-[#7DB892] mb-1">Score *</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={form.score}
+                onChange={(e) => setForm({ ...form, score: parseInt(e.target.value) || 0 })}
+                className="w-full font-mono"
+              />
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs text-[#7DB892] mb-1">Score</label>
-              <input type="number" min={0} max={100} value={form.score} onChange={(e) => setForm({ ...form, score: parseInt(e.target.value) || 0 })} className="w-full font-mono" />
+
+          {/* Expandable section */}
+          <button
+            type="button"
+            onClick={() => setShowMore(!showMore)}
+            className="flex items-center gap-1.5 text-xs text-[#7DB892] hover:text-[#2ECC71] w-full py-1"
+          >
+            {showMore ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            {showMore ? 'Less details' : 'Add more details'}
+          </button>
+
+          {showMore && (
+            <div className="space-y-3 pt-1 border-t border-[#1A3D26]">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-[#7DB892] mb-1">Operating Mode</label>
+                  <select value={form.operatingMode} onChange={(e) => setForm({ ...form, operatingMode: e.target.value })} className="w-full">
+                    {OPERATING_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-[#7DB892] mb-1">Wave</label>
+                  <select value={form.wave} onChange={(e) => setForm({ ...form, wave: e.target.value })} className="w-full">
+                    {WAVES.map((w) => <option key={w} value={w}>{w}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-1.5 text-xs text-[#7DB892]">
+                  <input type="checkbox" checked={form.edStatus} onChange={(e) => setForm({ ...form, edStatus: e.target.checked })} className="accent-[#2ECC71]" />
+                  ED
+                </label>
+                <label className="flex items-center gap-1.5 text-xs text-[#7DB892]">
+                  <input type="checkbox" checked={form.trtStatus} onChange={(e) => setForm({ ...form, trtStatus: e.target.checked })} className="accent-[#2ECC71]" />
+                  TRT
+                </label>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-[#7DB892] mb-1">Contact Name</label>
+                  <input type="text" value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} className="w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs text-[#7DB892] mb-1">Contact Email</label>
+                  <input type="email" value={form.contactEmail} onChange={(e) => setForm({ ...form, contactEmail: e.target.value })} className="w-full" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-[#7DB892] mb-1">Job Title</label>
+                  <input type="text" value={form.contactJobTitle} onChange={(e) => setForm({ ...form, contactJobTitle: e.target.value })} className="w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs text-[#7DB892] mb-1">Website</label>
+                  <input type="url" value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} className="w-full" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-[#7DB892] mb-1">Notes</label>
+                <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="w-full h-16 resize-none" />
+              </div>
             </div>
-            <div>
-              <label className="block text-xs text-[#7DB892] mb-1">Wave</label>
-              <select value={form.wave} onChange={(e) => setForm({ ...form, wave: e.target.value })} className="w-full">
-                {WAVES.map((w) => <option key={w} value={w}>{w}</option>)}
-              </select>
-            </div>
-            <div className="flex items-end gap-3 pb-1">
-              <label className="flex items-center gap-1.5 text-xs text-[#7DB892]">
-                <input type="checkbox" checked={form.edStatus} onChange={(e) => setForm({ ...form, edStatus: e.target.checked })} className="accent-[#2ECC71]" />
-                ED
-              </label>
-              <label className="flex items-center gap-1.5 text-xs text-[#7DB892]">
-                <input type="checkbox" checked={form.trtStatus} onChange={(e) => setForm({ ...form, trtStatus: e.target.checked })} className="accent-[#2ECC71]" />
-                TRT
-              </label>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-[#7DB892] mb-1">Contact Name</label>
-              <input type="text" value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} className="w-full" />
-            </div>
-            <div>
-              <label className="block text-xs text-[#7DB892] mb-1">Contact Email</label>
-              <input type="email" value={form.contactEmail} onChange={(e) => setForm({ ...form, contactEmail: e.target.value })} className="w-full" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-[#7DB892] mb-1">Job Title</label>
-              <input type="text" value={form.contactJobTitle} onChange={(e) => setForm({ ...form, contactJobTitle: e.target.value })} className="w-full" />
-            </div>
-            <div>
-              <label className="block text-xs text-[#7DB892] mb-1">Website</label>
-              <input type="url" value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} className="w-full" />
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs text-[#7DB892] mb-1">Notes</label>
-            <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="w-full h-16 resize-none" />
-          </div>
+          )}
+
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="px-4 py-1.5 text-sm text-[#7DB892] hover:text-[#F0F7F2] rounded-md border border-[#1A3D26] hover:border-[#2ECC71]/40">
               Cancel
@@ -250,69 +451,6 @@ function AddPartnerModal({ onClose, onAdd }) {
             <button type="submit" className="px-4 py-1.5 text-sm bg-[#1A6B3C] hover:bg-[#2ECC71] text-[#F0F7F2] rounded-md font-medium">
               Add Partner
             </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-function QuickLogModal({ partner, onClose, onLog }) {
-  const [form, setForm] = useState({
-    type: 'Email Sent',
-    subject: '',
-    outcome: '',
-    nextAction: '',
-    nextActionDue: '',
-  });
-
-  const TYPES = ['Email Sent', 'Email Received', 'Call', 'Meeting', 'Note', 'LinkedIn', 'Other'];
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!form.subject.trim()) return;
-    onLog(partner.id, form);
-    onClose();
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
-      <div
-        className="bg-[#0F2318] border border-[#1A3D26] rounded-lg w-full max-w-md p-6 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold text-[#F0F7F2]">Log Activity — {partner.name}</h2>
-          <button onClick={onClose} className="text-[#7DB892] hover:text-[#F0F7F2]"><X size={18} /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div>
-            <label className="block text-xs text-[#7DB892] mb-1">Type</label>
-            <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="w-full">
-              {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-[#7DB892] mb-1">Subject *</label>
-            <input type="text" value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} className="w-full" autoFocus />
-          </div>
-          <div>
-            <label className="block text-xs text-[#7DB892] mb-1">Outcome</label>
-            <input type="text" value={form.outcome} onChange={(e) => setForm({ ...form, outcome: e.target.value })} className="w-full" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-[#7DB892] mb-1">Next Action</label>
-              <input type="text" value={form.nextAction} onChange={(e) => setForm({ ...form, nextAction: e.target.value })} className="w-full" />
-            </div>
-            <div>
-              <label className="block text-xs text-[#7DB892] mb-1">Due Date</label>
-              <input type="date" value={form.nextActionDue} onChange={(e) => setForm({ ...form, nextActionDue: e.target.value })} className="w-full" />
-            </div>
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={onClose} className="px-4 py-1.5 text-sm text-[#7DB892] hover:text-[#F0F7F2] rounded-md border border-[#1A3D26]">Cancel</button>
-            <button type="submit" className="px-4 py-1.5 text-sm bg-[#1A6B3C] hover:bg-[#2ECC71] text-[#F0F7F2] rounded-md font-medium">Log Activity</button>
           </div>
         </form>
       </div>
@@ -384,7 +522,37 @@ function BulkActionBar({ count, onMoveStage, onMoveWave, onArchive, onExport, on
   );
 }
 
-export default function PipelineBoard({ globalSearch }) {
+// Toast notification for stage changes
+function StageChangeToast({ partnerName, stageName, onUndo, onDismiss }) {
+  useEffect(() => {
+    const timer = setTimeout(onDismiss, 5000);
+    return () => clearTimeout(timer);
+  }, [onDismiss]);
+
+  return (
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-3 px-4 py-2.5 bg-[#0F2318] border border-[#2ECC71]/40 rounded-lg shadow-xl animate-toast-in">
+      <Check size={14} className="text-[#2ECC71] flex-shrink-0" />
+      <span className="text-sm text-[#F0F7F2]">
+        Moved <span className="font-semibold">{partnerName}</span> to <span className="text-[#2ECC71]">{stageName}</span>
+      </span>
+      <button
+        onClick={onUndo}
+        className="flex items-center gap-1 px-2 py-0.5 text-xs text-[#E07B00] hover:text-[#F0F7F2] border border-[#E07B00]/40 rounded hover:bg-[#E07B00]/10"
+      >
+        <Undo2 size={11} /> Undo
+      </button>
+      <style>{`
+        @keyframes toastIn {
+          from { opacity: 0; transform: translate(-50%, 10px); }
+          to { opacity: 1; transform: translate(-50%, 0); }
+        }
+        .animate-toast-in { animation: toastIn 200ms ease-out; }
+      `}</style>
+    </div>
+  );
+}
+
+export default function PipelineBoard({ globalSearch, onOpenProfile }) {
   const {
     partners,
     addPartner,
@@ -396,12 +564,17 @@ export default function PipelineBoard({ globalSearch }) {
   } = useStore();
 
   const [showAddModal, setShowAddModal] = useState(false);
-  const [logPartner, setLogPartner] = useState(null);
-  const [profilePartner, setProfilePartner] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [showArchived, setShowArchived] = useState(false);
   const [draggingId, setDraggingId] = useState(null);
   const [dragOverStage, setDragOverStage] = useState(null);
+  const [inlineLogPartnerId, setInlineLogPartnerId] = useState(null);
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState(null); // { x, y, partner }
+
+  // Toast state for stage changes via drag
+  const [toast, setToast] = useState(null); // { partnerName, stageName, partnerId, previousStage }
 
   // Filters
   const [filterCategory, setFilterCategory] = useState('');
@@ -454,12 +627,35 @@ export default function PipelineBoard({ globalSearch }) {
     (stage, e) => {
       e.preventDefault();
       const id = e.dataTransfer.getData('text/plain');
-      if (id) movePipelineStage(id, stage);
+      if (id) {
+        const partner = partners.find((p) => p.id === id);
+        if (partner && partner.pipelineStage !== stage) {
+          const previousStage = partner.pipelineStage;
+          movePipelineStage(id, stage);
+          setToast({
+            partnerName: partner.name,
+            stageName: PIPELINE_STAGE_LABELS[stage],
+            partnerId: id,
+            previousStage,
+          });
+        }
+      }
       setDraggingId(null);
       setDragOverStage(null);
     },
-    [movePipelineStage]
+    [movePipelineStage, partners]
   );
+
+  const handleUndoStageChange = useCallback(() => {
+    if (toast) {
+      movePipelineStage(toast.partnerId, toast.previousStage);
+      setToast(null);
+    }
+  }, [toast, movePipelineStage]);
+
+  const handleContextMenu = useCallback((e, partner) => {
+    setContextMenu({ x: e.clientX, y: e.clientY, partner });
+  }, []);
 
   const handleExportCSV = useCallback(() => {
     const ids = [...selectedIds];
@@ -481,11 +677,21 @@ export default function PipelineBoard({ globalSearch }) {
     URL.revokeObjectURL(url);
   }, [selectedIds, partners]);
 
-  // Keep profile partner in sync with store
-  const currentProfilePartner = profilePartner ? partners.find((p) => p.id === profilePartner.id) || null : null;
+  const handleCardClick = useCallback((partner) => {
+    if (onOpenProfile) onOpenProfile(partner.id);
+  }, [onOpenProfile]);
+
+  const toggleInlineLog = useCallback((partnerId) => {
+    setInlineLogPartnerId((prev) => (prev === partnerId ? null : partnerId));
+  }, []);
+
+  const handleInlineLogSubmit = useCallback((partnerId, interaction) => {
+    addInteraction(partnerId, interaction);
+    setInlineLogPartnerId(null);
+  }, [addInteraction]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-53px)]">
+    <div className="flex flex-col h-[calc(100vh-105px)]">
       {/* Filter bar */}
       <div className="flex items-center gap-3 px-6 py-3 border-b border-[#1A3D26] bg-[#0A1A12] flex-shrink-0">
         <Filter size={15} className="text-[#7DB892]" />
@@ -534,9 +740,9 @@ export default function PipelineBoard({ globalSearch }) {
         </button>
       </div>
 
-      {/* Bulk action bar */}
+      {/* Bulk action bar — sticky at top when items selected */}
       {selectedIds.size > 0 && (
-        <div className="px-6 py-2 flex-shrink-0">
+        <div className="px-6 py-2 flex-shrink-0 sticky top-0 z-20 bg-[#0A1A12]">
           <BulkActionBar
             count={selectedIds.size}
             onMoveStage={(stage) => { bulkMoveStage([...selectedIds], stage); setSelectedIds(new Set()); }}
@@ -582,15 +788,21 @@ export default function PipelineBoard({ globalSearch }) {
                       partner={partner}
                       selected={selectedIds.has(partner.id)}
                       onToggleSelect={toggleSelect}
-                      onClick={(p) => setProfilePartner(p)}
-                      onLogActivity={(p) => setLogPartner(p)}
+                      onClick={handleCardClick}
+                      onLogActivity={() => {}}
                       onDragStart={(id) => setDraggingId(id)}
                       onDragEnd={() => { setDraggingId(null); setDragOverStage(null); }}
+                      showInlineLog={inlineLogPartnerId === partner.id}
+                      onToggleInlineLog={toggleInlineLog}
+                      onLogSubmit={handleInlineLogSubmit}
+                      onContextMenu={handleContextMenu}
                     />
                   ))}
                   {cards.length === 0 && (
-                    <div className="text-center py-8 text-[#7DB892]/40 text-xs">
-                      Drop partners here
+                    <div className="text-center py-8 px-3">
+                      <div className="text-[#7DB892]/40 text-xs">
+                        {EMPTY_STATE_MESSAGES[stage]}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -600,30 +812,49 @@ export default function PipelineBoard({ globalSearch }) {
         </div>
       </div>
 
-      {/* Modals */}
+      {/* Add Partner Modal */}
       {showAddModal && (
         <AddPartnerModal
           onClose={() => setShowAddModal(false)}
-          onAdd={(data) => addPartner(data)}
-        />
-      )}
-
-      {logPartner && (
-        <QuickLogModal
-          partner={logPartner}
-          onClose={() => setLogPartner(null)}
-          onLog={(partnerId, interaction) => {
-            addInteraction(partnerId, interaction);
-            setLogPartner(null);
+          onAdd={(data) => {
+            const newPartner = addPartner(data);
+            if (onOpenProfile && newPartner) {
+              onOpenProfile(newPartner.id);
+            }
           }}
         />
       )}
 
-      {/* Partner Profile slide-over */}
-      {currentProfilePartner && (
-        <PartnerProfile
-          partner={currentProfilePartner}
-          onClose={() => setProfilePartner(null)}
+      {/* Context menu for inline stage change */}
+      {contextMenu && (
+        <StageContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          partner={contextMenu.partner}
+          onMove={(partnerId, stage) => {
+            const partner = partners.find((p) => p.id === partnerId);
+            if (partner && partner.pipelineStage !== stage) {
+              const previousStage = partner.pipelineStage;
+              movePipelineStage(partnerId, stage);
+              setToast({
+                partnerName: partner.name,
+                stageName: PIPELINE_STAGE_LABELS[stage],
+                partnerId,
+                previousStage,
+              });
+            }
+          }}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {/* Stage change toast */}
+      {toast && (
+        <StageChangeToast
+          partnerName={toast.partnerName}
+          stageName={toast.stageName}
+          onUndo={handleUndoStageChange}
+          onDismiss={() => setToast(null)}
         />
       )}
     </div>

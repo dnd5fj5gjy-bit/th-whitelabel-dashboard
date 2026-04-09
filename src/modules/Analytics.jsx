@@ -1,10 +1,10 @@
-import { useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useStore } from '../hooks/useStore';
 import { PIPELINE_STAGES, PIPELINE_STAGE_LABELS, CATEGORIES } from '../lib/partners';
 import { differenceInDays, subDays, format } from 'date-fns';
 import {
   BarChart3, Users, Target, HandshakeIcon, AlertTriangle, TrendingUp,
-  Zap, Lock, ArrowRight, Clock, Sparkles, Activity, Phone, Mail
+  Zap, Lock, ArrowRight, Clock, Sparkles, Activity, Phone, Mail, ChevronRight
 } from 'lucide-react';
 
 const CATEGORY_COLORS = {
@@ -30,6 +30,8 @@ const FUNNEL_COLORS = {
 
 export default function Analytics({ onNavigate }) {
   const { partners } = useStore();
+  const [drilldownStage, setDrilldownStage] = useState(null);
+  const [drilldownCategory, setDrilldownCategory] = useState(null);
 
   const active = useMemo(() => partners.filter(p => !p.archived && !p.notCompatible), [partners]);
 
@@ -40,15 +42,7 @@ export default function Analytics({ onNavigate }) {
       ['contacted', 'replied', 'call-booked', 'proposal-sent', 'negotiating'].includes(p.pipelineStage)
     ).length;
     const signed = active.filter(p => p.pipelineStage === 'signed').length;
-
-    const now = new Date();
-    const overdue = active.filter(p => {
-      const lastInteraction = p.interactions.find(i => i.nextActionDue);
-      if (!lastInteraction) return false;
-      return new Date(lastInteraction.nextActionDue) < now;
-    });
-
-    return { totalPipeline, wave1Active, dealsInProgress, signed, overdue };
+    return { totalPipeline, wave1Active, dealsInProgress, signed };
   }, [active]);
 
   const overdue = useMemo(() => {
@@ -106,6 +100,26 @@ export default function Analytics({ onNavigate }) {
     });
   }, [active]);
 
+  // Weekly spark chart data: interactions per day for last 7 days
+  const dailyActivity = useMemo(() => {
+    const days = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = subDays(new Date(), i);
+      const dateStr = format(d, 'yyyy-MM-dd');
+      const dayLabel = format(d, 'EEE');
+      let count = 0;
+      active.forEach(p => {
+        p.interactions.forEach(int => {
+          if (int.date && int.date.startsWith(dateStr)) count++;
+        });
+      });
+      days.push({ dateStr, dayLabel, count });
+    }
+    return days;
+  }, [active]);
+
+  const maxDailyCount = useMemo(() => Math.max(...dailyActivity.map(d => d.count), 1), [dailyActivity]);
+
   const weeklyActivity = useMemo(() => {
     const weekAgo = subDays(new Date(), 7);
     let emailsSent = 0, callsHeld = 0, totalInteractions = 0;
@@ -128,8 +142,135 @@ export default function Analytics({ onNavigate }) {
       .slice(0, 5);
   }, [active]);
 
+  // Drilldown lists
+  const drilldownPartners = useMemo(() => {
+    if (drilldownStage) return active.filter(p => p.pipelineStage === drilldownStage);
+    if (drilldownCategory) return active.filter(p => p.category === drilldownCategory);
+    return [];
+  }, [active, drilldownStage, drilldownCategory]);
+
+  // Priority section logic
+  const priority = useMemo(() => {
+    if (overdue.length > 0) {
+      return {
+        type: 'overdue',
+        message: `${overdue.length} overdue follow-up${overdue.length === 1 ? '' : 's'}`,
+        action: 'Review overdue',
+        severity: 'danger',
+      };
+    }
+    const w1Uncontacted = active.filter(p => p.wave === 'W1' && p.pipelineStage === 'identified').length;
+    if (w1Uncontacted > 0) {
+      return {
+        type: 'w1',
+        message: `${w1Uncontacted} Wave 1 partner${w1Uncontacted === 1 ? '' : 's'} haven't been contacted yet`,
+        action: 'Start outreach',
+        severity: 'warning',
+      };
+    }
+    const inProgress = active.filter(p =>
+      ['replied', 'call-booked'].includes(p.pipelineStage)
+    ).length;
+    if (inProgress > 0) {
+      return {
+        type: 'progress',
+        message: `${inProgress} active conversation${inProgress === 1 ? '' : 's'} to advance`,
+        action: 'View pipeline',
+        severity: 'info',
+      };
+    }
+    return null;
+  }, [overdue, active]);
+
+  function handlePriorityAction() {
+    if (!priority) return;
+    if (priority.type === 'overdue') {
+      // Scroll to overdue section or navigate
+      const el = document.getElementById('overdue-section');
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+    } else if (priority.type === 'w1') {
+      if (topOpportunities.length > 0) {
+        onNavigate?.('outreach', { partnerId: topOpportunities[0].id });
+      }
+    } else {
+      onNavigate?.('pipeline');
+    }
+  }
+
+  function handleStageClick(stage) {
+    setDrilldownCategory(null);
+    setDrilldownStage(drilldownStage === stage ? null : stage);
+  }
+
+  function handleCategoryClick(category) {
+    setDrilldownStage(null);
+    setDrilldownCategory(drilldownCategory === category ? null : category);
+  }
+
   return (
     <div className="space-y-6">
+      {/* Overdue banner */}
+      {overdue.length > 0 && (
+        <div className="rounded-lg border border-[#C0392B]/40 bg-[#C0392B]/10 px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={16} className="text-[#C0392B]" />
+            <span className="text-sm font-medium text-[#C0392B]">
+              {overdue.length} overdue follow-up{overdue.length === 1 ? '' : 's'}
+            </span>
+            <span className="text-xs text-[#C0392B]/70">
+              -- most overdue: {overdue[0].partner.name} ({overdue[0].daysOverdue}d)
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              const el = document.getElementById('overdue-section');
+              if (el) el.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="text-xs px-3 py-1.5 rounded-md bg-[#C0392B] text-white hover:bg-[#C0392B]/80 transition-colors"
+          >
+            Review
+          </button>
+        </div>
+      )}
+
+      {/* Today's Priority */}
+      {priority && (
+        <div className={`rounded-lg border px-4 py-3 flex items-center justify-between ${
+          priority.severity === 'danger'
+            ? 'border-[#C0392B]/30 bg-[#C0392B]/5'
+            : priority.severity === 'warning'
+              ? 'border-[#E07B00]/30 bg-[#E07B00]/5'
+              : 'border-[#1A6B3C]/30 bg-[#1A6B3C]/5'
+        }`}>
+          <div className="flex items-center gap-3">
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+              priority.severity === 'danger'
+                ? 'bg-[#C0392B]/20'
+                : priority.severity === 'warning'
+                  ? 'bg-[#E07B00]/20'
+                  : 'bg-[#1A6B3C]/20'
+            }`}>
+              <Target size={16} className={
+                priority.severity === 'danger' ? 'text-[#C0392B]'
+                  : priority.severity === 'warning' ? 'text-[#E07B00]'
+                    : 'text-[#2ECC71]'
+              } />
+            </div>
+            <div>
+              <div className="text-xs text-[#7DB892] uppercase tracking-wider">Today's Priority</div>
+              <div className="text-sm text-[#F0F7F2] font-medium">{priority.message}</div>
+            </div>
+          </div>
+          <button
+            onClick={handlePriorityAction}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-[#1A6B3C] hover:bg-[#2ECC71]/80 text-white transition-colors"
+          >
+            {priority.action}
+            <ArrowRight size={12} />
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-lg bg-[#1A6B3C]/30 flex items-center justify-center">
@@ -155,19 +296,27 @@ export default function Analytics({ onNavigate }) {
         />
       </div>
 
-      {/* Pipeline Funnel */}
+      {/* Pipeline Funnel -- clickable */}
       <div className="rounded-lg border border-[#1A3D26] bg-[#0F2318] p-5">
         <h2 className="text-sm font-semibold text-[#F0F7F2] mb-4 flex items-center gap-2">
           <Activity size={14} className="text-[#7DB892]" />
           Pipeline Funnel
+          <span className="text-xs text-[#4a7a5a] font-normal ml-1">Click a stage to drill down</span>
         </h2>
         <div className="space-y-2">
           {FUNNEL_STAGES.map(stage => {
             const count = stageCounts[stage];
             const pct = (count / maxStageCount) * 100;
+            const isActive = drilldownStage === stage;
             return (
-              <div key={stage} className="flex items-center gap-3">
-                <div className="w-28 text-xs text-[#7DB892] text-right shrink-0">
+              <button
+                key={stage}
+                onClick={() => handleStageClick(stage)}
+                className={`w-full flex items-center gap-3 rounded-md transition-colors ${
+                  isActive ? 'bg-[#0A1A12] ring-1 ring-[#2ECC71]/40' : 'hover:bg-[#0A1A12]/30'
+                }`}
+              >
+                <div className="w-28 text-xs text-[#7DB892] text-right shrink-0 py-1">
                   {PIPELINE_STAGE_LABELS[stage]}
                 </div>
                 <div className="flex-1 h-7 bg-[#0A1A12] rounded-md overflow-hidden relative">
@@ -175,7 +324,7 @@ export default function Analytics({ onNavigate }) {
                     className="h-full rounded-md transition-all duration-500"
                     style={{
                       width: `${Math.max(pct, count > 0 ? 3 : 0)}%`,
-                      backgroundColor: FUNNEL_COLORS[stage],
+                      backgroundColor: isActive ? '#2ECC71' : FUNNEL_COLORS[stage],
                     }}
                   />
                   {count > 0 && (
@@ -184,49 +333,137 @@ export default function Analytics({ onNavigate }) {
                     </span>
                   )}
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
+
+        {/* Stage drilldown list */}
+        {drilldownStage && drilldownPartners.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-[#1A3D26]">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xs font-semibold text-[#7DB892] uppercase tracking-wider">
+                {PIPELINE_STAGE_LABELS[drilldownStage]} -- {drilldownPartners.length} partner{drilldownPartners.length === 1 ? '' : 's'}
+              </h3>
+              <button onClick={() => setDrilldownStage(null)} className="text-xs text-[#4a7a5a] hover:text-[#7DB892]">
+                Close
+              </button>
+            </div>
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {drilldownPartners.map(p => (
+                <div key={p.id} className="flex items-center justify-between rounded-md bg-[#0A1A12] px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full" style={{ background: CATEGORY_COLORS[p.category] }} />
+                    <span className="text-sm text-[#F0F7F2]">{p.name}</span>
+                    <span className="text-xs text-[#7DB892] font-mono">{p.score}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => onNavigate?.('pipeline', { partnerId: p.id })}
+                      className="text-xs px-2 py-1 rounded bg-[#1A3D26] hover:bg-[#1A6B3C] text-[#F0F7F2] transition-colors"
+                    >
+                      View
+                    </button>
+                    <button
+                      onClick={() => onNavigate?.('outreach', { partnerId: p.id })}
+                      className="text-xs px-2 py-1 rounded bg-[#1A6B3C] hover:bg-[#2ECC71]/80 text-white transition-colors flex items-center gap-1"
+                    >
+                      <Sparkles size={10} />
+                      Outreach
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Category Breakdown */}
+        {/* Category Breakdown -- clickable */}
         <div className="rounded-lg border border-[#1A3D26] bg-[#0F2318] p-5">
           <h2 className="text-sm font-semibold text-[#F0F7F2] mb-4 flex items-center gap-2">
             <BarChart3 size={14} className="text-[#7DB892]" />
             Category Breakdown
+            <span className="text-xs text-[#4a7a5a] font-normal ml-1">Click to filter</span>
           </h2>
           <div className="space-y-3">
-            {categoryBreakdown.map(({ category, total, stages }) => (
-              <div key={category}>
-                <div className="flex items-center justify-between text-xs mb-1">
-                  <span className="text-[#F0F7F2] flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full inline-block" style={{ background: CATEGORY_COLORS[category] }} />
-                    {category}
-                  </span>
-                  <span className="font-mono text-[#7DB892]">{total}</span>
+            {categoryBreakdown.map(({ category, total, stages }) => {
+              const isActive = drilldownCategory === category;
+              return (
+                <button
+                  key={category}
+                  onClick={() => handleCategoryClick(category)}
+                  className={`w-full text-left rounded-md transition-colors ${isActive ? 'bg-[#0A1A12]/50 ring-1 ring-[#2ECC71]/30 p-2 -mx-2' : ''}`}
+                >
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="text-[#F0F7F2] flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full inline-block" style={{ background: CATEGORY_COLORS[category] }} />
+                      {category}
+                    </span>
+                    <span className="font-mono text-[#7DB892]">{total}</span>
+                  </div>
+                  <div className="h-5 bg-[#0A1A12] rounded-md overflow-hidden flex" style={{ width: `${(total / maxCatCount) * 100}%`, minWidth: '40px' }}>
+                    {FUNNEL_STAGES.map(stage => {
+                      const count = stages[stage];
+                      if (count === 0) return null;
+                      return (
+                        <div
+                          key={stage}
+                          className="h-full"
+                          style={{
+                            width: `${(count / total) * 100}%`,
+                            backgroundColor: FUNNEL_COLORS[stage],
+                            opacity: 0.7 + (FUNNEL_STAGES.indexOf(stage) / FUNNEL_STAGES.length) * 0.3,
+                          }}
+                          title={`${PIPELINE_STAGE_LABELS[stage]}: ${count}`}
+                        />
+                      );
+                    })}
+                  </div>
+                </button>
+              );
+            })}
+
+            {/* Category drilldown list */}
+            {drilldownCategory && (
+              <div className="pt-3 border-t border-[#1A3D26]">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-semibold text-[#7DB892] uppercase tracking-wider">
+                    {drilldownCategory} -- {drilldownPartners.length} partner{drilldownPartners.length === 1 ? '' : 's'}
+                  </h3>
+                  <button onClick={() => setDrilldownCategory(null)} className="text-xs text-[#4a7a5a] hover:text-[#7DB892]">
+                    Close
+                  </button>
                 </div>
-                <div className="h-5 bg-[#0A1A12] rounded-md overflow-hidden flex" style={{ width: `${(total / maxCatCount) * 100}%`, minWidth: '40px' }}>
-                  {FUNNEL_STAGES.map(stage => {
-                    const count = stages[stage];
-                    if (count === 0) return null;
-                    return (
-                      <div
-                        key={stage}
-                        className="h-full"
-                        style={{
-                          width: `${(count / total) * 100}%`,
-                          backgroundColor: FUNNEL_COLORS[stage],
-                          opacity: 0.7 + (FUNNEL_STAGES.indexOf(stage) / FUNNEL_STAGES.length) * 0.3,
-                        }}
-                        title={`${PIPELINE_STAGE_LABELS[stage]}: ${count}`}
-                      />
-                    );
-                  })}
+                <div className="space-y-1 max-h-40 overflow-y-auto">
+                  {drilldownPartners.map(p => (
+                    <div key={p.id} className="flex items-center justify-between rounded-md bg-[#0A1A12] px-3 py-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-[#F0F7F2]">{p.name}</span>
+                        <span className="text-[10px] text-[#7DB892] capitalize">{p.pipelineStage.replace('-', ' ')}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => onNavigate?.('pipeline', { partnerId: p.id })}
+                          className="text-xs px-2 py-1 rounded bg-[#1A3D26] hover:bg-[#1A6B3C] text-[#F0F7F2] transition-colors"
+                        >
+                          View
+                        </button>
+                        <button
+                          onClick={() => onNavigate?.('outreach', { partnerId: p.id })}
+                          className="text-xs px-2 py-1 rounded bg-[#1A6B3C] hover:bg-[#2ECC71]/80 text-white transition-colors flex items-center gap-1"
+                        >
+                          <Sparkles size={10} />
+                          Outreach
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
+            )}
+
             {/* Legend */}
             <div className="flex flex-wrap gap-x-4 gap-y-1 pt-3 border-t border-[#1A3D26]">
               {FUNNEL_STAGES.map(stage => (
@@ -301,7 +538,7 @@ export default function Analytics({ onNavigate }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Overdue Follow-ups */}
-        <div className="rounded-lg border border-[#1A3D26] bg-[#0F2318] p-5">
+        <div id="overdue-section" className="rounded-lg border border-[#1A3D26] bg-[#0F2318] p-5">
           <h2 className="text-sm font-semibold text-[#F0F7F2] mb-4 flex items-center gap-2">
             <AlertTriangle size={14} className={overdue.length > 0 ? 'text-[#C0392B]' : 'text-[#7DB892]'} />
             Overdue Follow-ups
@@ -321,13 +558,20 @@ export default function Analytics({ onNavigate }) {
                     <div className="text-sm text-[#F0F7F2] font-medium">{p.name}</div>
                     <div className="text-xs text-[#7DB892]">{action}</div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
                     <span className="text-xs font-mono text-[#C0392B]">{daysOverdue}d overdue</span>
                     <button
-                      onClick={() => onNavigate?.('partners', { partnerId: p.id, openActivity: true })}
+                      onClick={() => onNavigate?.('pipeline', { partnerId: p.id })}
                       className="text-xs px-2 py-1 rounded bg-[#1A3D26] hover:bg-[#1A6B3C] text-[#F0F7F2] transition-colors"
                     >
                       Log Activity
+                    </button>
+                    <button
+                      onClick={() => onNavigate?.('outreach', { partnerId: p.id })}
+                      className="text-xs px-2 py-1 rounded bg-[#1A6B3C] hover:bg-[#2ECC71]/80 text-white transition-colors flex items-center gap-1"
+                    >
+                      <Sparkles size={10} />
+                      Outreach
                     </button>
                   </div>
                 </div>
@@ -336,27 +580,44 @@ export default function Analytics({ onNavigate }) {
           )}
         </div>
 
-        {/* Weekly Activity */}
+        {/* Weekly Activity with spark chart */}
         <div className="rounded-lg border border-[#1A3D26] bg-[#0F2318] p-5">
           <h2 className="text-sm font-semibold text-[#F0F7F2] mb-4 flex items-center gap-2">
             <Activity size={14} className="text-[#7DB892]" />
-            Weekly Activity Summary
+            Weekly Activity
           </h2>
+
+          {/* Spark chart */}
+          <div className="flex items-end gap-1 h-16 mb-4 px-1">
+            {dailyActivity.map((d, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                <div
+                  className="w-full rounded-sm transition-all duration-300"
+                  style={{
+                    height: `${Math.max((d.count / maxDailyCount) * 48, d.count > 0 ? 4 : 2)}px`,
+                    backgroundColor: d.count > 0 ? '#2ECC71' : '#1A3D26',
+                  }}
+                />
+                <span className="text-[9px] text-[#7DB892]">{d.dayLabel}</span>
+              </div>
+            ))}
+          </div>
+
           <div className="grid grid-cols-3 gap-4">
-            <div className="rounded-md border border-[#1A3D26] bg-[#0A1A12] p-4 text-center">
-              <Mail size={18} className="text-[#3B82F6] mx-auto mb-2" />
-              <div className="text-2xl font-mono text-[#F0F7F2] font-semibold">{weeklyActivity.emailsSent}</div>
-              <div className="text-xs text-[#7DB892] mt-1">Emails Sent</div>
+            <div className="rounded-md border border-[#1A3D26] bg-[#0A1A12] p-3 text-center">
+              <Mail size={16} className="text-[#3B82F6] mx-auto mb-1" />
+              <div className="text-xl font-mono text-[#F0F7F2] font-semibold">{weeklyActivity.emailsSent}</div>
+              <div className="text-[10px] text-[#7DB892] mt-0.5">Emails Sent</div>
             </div>
-            <div className="rounded-md border border-[#1A3D26] bg-[#0A1A12] p-4 text-center">
-              <Phone size={18} className="text-[#2ECC71] mx-auto mb-2" />
-              <div className="text-2xl font-mono text-[#F0F7F2] font-semibold">{weeklyActivity.callsHeld}</div>
-              <div className="text-xs text-[#7DB892] mt-1">Calls / Meetings</div>
+            <div className="rounded-md border border-[#1A3D26] bg-[#0A1A12] p-3 text-center">
+              <Phone size={16} className="text-[#2ECC71] mx-auto mb-1" />
+              <div className="text-xl font-mono text-[#F0F7F2] font-semibold">{weeklyActivity.callsHeld}</div>
+              <div className="text-[10px] text-[#7DB892] mt-0.5">Calls / Meetings</div>
             </div>
-            <div className="rounded-md border border-[#1A3D26] bg-[#0A1A12] p-4 text-center">
-              <Activity size={18} className="text-[#E07B00] mx-auto mb-2" />
-              <div className="text-2xl font-mono text-[#F0F7F2] font-semibold">{weeklyActivity.totalInteractions}</div>
-              <div className="text-xs text-[#7DB892] mt-1">Total Interactions</div>
+            <div className="rounded-md border border-[#1A3D26] bg-[#0A1A12] p-3 text-center">
+              <Activity size={16} className="text-[#E07B00] mx-auto mb-1" />
+              <div className="text-xl font-mono text-[#F0F7F2] font-semibold">{weeklyActivity.totalInteractions}</div>
+              <div className="text-[10px] text-[#7DB892] mt-0.5">Total</div>
             </div>
           </div>
         </div>
@@ -366,7 +627,7 @@ export default function Analytics({ onNavigate }) {
       <div className="rounded-lg border border-[#1A3D26] bg-[#0F2318] p-5">
         <h2 className="text-sm font-semibold text-[#F0F7F2] mb-4 flex items-center gap-2">
           <TrendingUp size={14} className="text-[#2ECC71]" />
-          Top Opportunities — Wave 1, Not Yet Contacted
+          Top Opportunities -- Wave 1, Not Yet Contacted
         </h2>
         {topOpportunities.length === 0 ? (
           <p className="text-sm text-[#7DB892] text-center py-4">All Wave 1 partners have been contacted.</p>

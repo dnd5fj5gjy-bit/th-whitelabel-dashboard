@@ -1,16 +1,26 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Printer, ExternalLink, Shield, Cpu, Users, Stethoscope, Building2,
   FlaskConical, CheckCircle2, ArrowRight, Pill, HeartPulse, MonitorSmartphone,
-  Landmark, Phone, Globe, Activity, Clock
+  Landmark, Phone, Globe, Activity, Clock, Share2, Copy, Check, ChevronUp
 } from 'lucide-react';
 
+const SECTIONS = [
+  { id: 'technology', label: 'Technology' },
+  { id: 'infrastructure', label: 'Infrastructure' },
+  { id: 'models', label: 'Models' },
+  { id: 'who', label: 'Who It\'s For' },
+  { id: 'commercial', label: 'Commercial' },
+  { id: 'timeline', label: 'Timeline' },
+];
+
 const CATEGORIES = [
-  { name: 'Online Pharmacies', icon: Pill, pitch: 'Add TRT and ED services to your existing dispensing workflow — no clinical hires, no CQC registration, full branding control.' },
+  { name: 'Online Pharmacies', icon: Pill, pitch: 'Add TRT and ED services to your existing dispensing workflow -- no clinical hires, no CQC registration, full branding control.' },
   { name: 'Telehealth Platforms', icon: MonitorSmartphone, pitch: 'Expand your men\'s health offering overnight with a plug-in clinical pathway that matches your existing UX.' },
   { name: "Men's Health Clinics", icon: HeartPulse, pitch: 'Go from referral-based TRT to a fully digital, scalable pathway that keeps patients in your brand.' },
   { name: 'ED Treatment Providers', icon: Activity, pitch: 'Bolt on TRT alongside your ED offering and double patient lifetime value with a clinically governed protocol.' },
-  { name: 'Private GP Services', icon: Stethoscope, pitch: 'Offer specialist men\'s health pathways without hiring endocrinologists — all under your clinical governance umbrella.' },
-  { name: 'Corporate Health Providers', icon: Building2, pitch: 'Add a premium men\'s health vertical to your corporate wellbeing package — fully managed, fully branded.' },
+  { name: 'Private GP Services', icon: Stethoscope, pitch: 'Offer specialist men\'s health pathways without hiring endocrinologists -- all under your clinical governance umbrella.' },
+  { name: 'Corporate Health Providers', icon: Building2, pitch: 'Add a premium men\'s health vertical to your corporate wellbeing package -- fully managed, fully branded.' },
   { name: 'Sexual Health Clinics', icon: Shield, pitch: 'Extend your sexual health services with clinical-grade ED and TRT pathways that keep patients within your ecosystem.' },
 ];
 
@@ -18,17 +28,81 @@ const TIMELINE_STEPS = [
   { label: 'Register Interest', desc: 'Fill in the form or email us directly' },
   { label: 'Discovery Call', desc: '30-minute call to assess fit and model' },
   { label: 'Partnership Agreement', desc: 'Commercial terms, data processing, clinical governance' },
-  { label: 'Branding Setup', desc: 'Your logo, colours, domain — we build it' },
+  { label: 'Branding Setup', desc: 'Your logo, colours, domain -- we build it' },
   { label: 'Go Live', desc: 'Patients can access services under your brand' },
 ];
 
 export default function PartnershipPage() {
+  const [copied, setCopied] = useState(false);
+  const [activeSection, setActiveSection] = useState('');
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const [visibleSections, setVisibleSections] = useState(new Set());
+  const containerRef = useRef(null);
+
   function handlePrint() {
     window.print();
   }
 
+  function handleShare() {
+    const url = window.location.href;
+    navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  // Scroll spy and animation observer
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          const id = entry.target.getAttribute('data-section');
+          if (id) {
+            if (entry.isIntersecting) {
+              setActiveSection(id);
+              setVisibleSections(prev => new Set([...prev, id]));
+            }
+          }
+        });
+      },
+      { threshold: 0.3, root: null }
+    );
+
+    SECTIONS.forEach(s => {
+      const el = document.getElementById(`section-${s.id}`);
+      if (el) observer.observe(el);
+    });
+
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 400);
+    };
+    window.addEventListener('scroll', handleScroll);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
+
+  function scrollToSection(id) {
+    const el = document.getElementById(`section-${id}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function scrollToTop() {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  const sectionClass = useCallback((id) => {
+    return `transition-all duration-700 ${
+      visibleSections.has(id) ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
+    }`;
+  }, [visibleSections]);
+
   return (
-    <div className="min-h-screen" style={{ background: '#FAFFFE' }}>
+    <div ref={containerRef} className="min-h-screen" style={{ background: '#FAFFFE' }}>
       <style>{`
         @media print {
           body, #root { background: white !important; }
@@ -38,18 +112,51 @@ export default function PartnershipPage() {
       `}</style>
 
       {/* Top bar */}
-      <div className="no-print sticky top-0 z-30 flex items-center justify-between px-6 py-3 border-b" style={{ background: '#FAFFFE', borderColor: '#d1e8d9' }}>
-        <span className="text-sm font-medium" style={{ color: '#1A6B3C' }}>
-          Ted's Health — Partnership Overview
-        </span>
-        <button
-          onClick={handlePrint}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-          style={{ background: '#1A6B3C', color: 'white' }}
-        >
-          <Printer size={14} />
-          Print / Share
-        </button>
+      <div className="no-print sticky top-0 z-30 border-b" style={{ background: '#FAFFFE', borderColor: '#d1e8d9' }}>
+        <div className="flex items-center justify-between px-6 py-3">
+          <span className="text-sm font-medium" style={{ color: '#1A6B3C' }}>
+            Ted's Health -- Partnership Overview
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleShare}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border"
+              style={{ borderColor: '#d1e8d9', color: '#1A6B3C' }}
+            >
+              {copied ? <Check size={14} /> : <Share2 size={14} />}
+              {copied ? 'Copied URL' : 'Share'}
+            </button>
+            <button
+              onClick={handlePrint}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+              style={{ background: '#1A6B3C', color: 'white' }}
+            >
+              <Printer size={14} />
+              Print
+            </button>
+          </div>
+        </div>
+
+        {/* Sticky section nav */}
+        <div className="flex items-center gap-1 px-6 pb-2 overflow-x-auto">
+          {SECTIONS.map(s => (
+            <button
+              key={s.id}
+              onClick={() => scrollToSection(s.id)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-all whitespace-nowrap ${
+                activeSection === s.id
+                  ? 'text-white'
+                  : 'hover:bg-[#e0f5e9]'
+              }`}
+              style={{
+                background: activeSection === s.id ? '#1A6B3C' : 'transparent',
+                color: activeSection === s.id ? 'white' : '#3a5e47',
+              }}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="max-w-4xl mx-auto px-6 py-12 space-y-16" style={{ color: '#1A2E23' }}>
@@ -60,11 +167,11 @@ export default function PartnershipPage() {
           </h1>
           <p className="text-lg max-w-2xl mx-auto" style={{ color: '#3a5e47' }}>
             A fully white-label clinical platform that lets you offer Testosterone Replacement Therapy and
-            Erectile Dysfunction services entirely under your own brand — with zero clinical infrastructure required.
+            Erectile Dysfunction services entirely under your own brand -- with zero clinical infrastructure required.
           </p>
           <div className="flex items-center justify-center gap-4 pt-2">
             <a
-              href="#register"
+              href="mailto:partnerships@tedshealth.com?subject=Partnership%20Interest%20-%20White%20Label%20Platform"
               className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-white font-semibold text-sm transition-opacity hover:opacity-90"
               style={{ background: '#1A6B3C' }}
             >
@@ -72,7 +179,7 @@ export default function PartnershipPage() {
               <ArrowRight size={16} />
             </a>
             <a
-              href="#discovery"
+              href="mailto:partnerships@tedshealth.com?subject=Discovery%20Call%20Request"
               className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-semibold text-sm border-2 transition-colors hover:bg-[#1A6B3C]/5"
               style={{ color: '#1A6B3C', borderColor: '#1A6B3C' }}
             >
@@ -83,16 +190,16 @@ export default function PartnershipPage() {
         </section>
 
         {/* WHAT WE'VE BUILT */}
-        <section className="space-y-6">
-          <SectionHeading icon={Cpu}>What We've Built — The Technology</SectionHeading>
+        <section id="section-technology" data-section="technology" className={`space-y-6 ${sectionClass('technology')}`}>
+          <SectionHeading icon={Cpu}>What We've Built -- The Technology</SectionHeading>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[
-              'Full TRT clinical pathway — from blood test ordering through to ongoing prescribing and monitoring',
-              'Full ED pathway — consultation, prescribing, dispensing, and follow-up',
+              'Full TRT clinical pathway -- from blood test ordering through to ongoing prescribing and monitoring',
+              'Full ED pathway -- consultation, prescribing, dispensing, and follow-up',
               'Automated billing and revenue tracking per patient per partner',
               'Dedicated partner portal with real-time patient metrics and revenue dashboard',
-              'Complete branding control — logo, colours, domain, email templates, patient-facing copy',
-              'Configurable clinical rules — set your own formulary, dosing protocols, and escalation thresholds',
+              'Complete branding control -- logo, colours, domain, email templates, patient-facing copy',
+              'Configurable clinical rules -- set your own formulary, dosing protocols, and escalation thresholds',
               'Patient management system with appointment scheduling, messaging, and document storage',
               'Integrated lab ordering with automatic result parsing and clinical flagging',
               'Secure video consultations via embedded Zoom SDK',
@@ -107,7 +214,7 @@ export default function PartnershipPage() {
         </section>
 
         {/* CLINICAL INFRASTRUCTURE */}
-        <section className="space-y-6">
+        <section id="section-infrastructure" data-section="infrastructure" className={`space-y-6 ${sectionClass('infrastructure')}`}>
           <SectionHeading icon={Stethoscope}>The Clinical Infrastructure</SectionHeading>
           <p className="text-sm" style={{ color: '#3a5e47' }}>
             Ted's Health has assembled the entire clinical supply chain so you don't have to.
@@ -115,12 +222,12 @@ export default function PartnershipPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[
               { label: 'GMC-Registered Doctors', detail: 'Led by Dr Jonathan Andrews (CMO). Full prescribing team with men\'s health specialisation.' },
-              { label: 'CQC Registration', detail: 'Ted\'s Health holds CQC registration — partners operating under FULL SERVICE inherit our compliance.' },
+              { label: 'CQC Registration', detail: 'Ted\'s Health holds CQC registration -- partners operating under FULL SERVICE inherit our compliance.' },
               { label: 'SignatureRx Pharmacy', detail: 'UK-regulated pharmacy partner handling dispensing, cold chain, and nationwide delivery.' },
               { label: 'Inuvi Labs', detail: 'Nationwide blood testing network. At-home kits and walk-in clinics. Automated result parsing.' },
               { label: 'Heim Nursing', detail: 'Nationwide nursing network for injection teaching, blood draws, and patient support.' },
               { label: 'Onfido ID Verification', detail: 'Automated identity verification and age confirmation before any clinical pathway begins.' },
-              { label: 'Zoom SDK Video', detail: 'Embedded video consultations — no patient download required, fully branded.' },
+              { label: 'Zoom SDK Video', detail: 'Embedded video consultations -- no patient download required, fully branded.' },
               { label: 'Clinical Governance', detail: 'Full audit trail, adverse event reporting, clinical protocols reviewed quarterly.' },
             ].map((item, i) => (
               <div key={i} className="rounded-lg border p-4" style={{ background: 'white', borderColor: '#d1e8d9' }}>
@@ -132,8 +239,8 @@ export default function PartnershipPage() {
         </section>
 
         {/* TWO MODELS */}
-        <section className="space-y-6 print-break">
-          <SectionHeading icon={Building2}>Two Models — One Platform</SectionHeading>
+        <section id="section-models" data-section="models" className={`space-y-6 print-break ${sectionClass('models')}`}>
+          <SectionHeading icon={Building2}>Two Models -- One Platform</SectionHeading>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* FULL SERVICE */}
             <div className="rounded-xl border-2 p-6 space-y-4" style={{ background: 'white', borderColor: '#1A6B3C' }}>
@@ -216,7 +323,7 @@ export default function PartnershipPage() {
         </section>
 
         {/* WHO IT'S FOR */}
-        <section className="space-y-6">
+        <section id="section-who" data-section="who" className={`space-y-6 ${sectionClass('who')}`}>
           <SectionHeading icon={Users}>Who It's For</SectionHeading>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {CATEGORIES.map((cat, i) => {
@@ -235,7 +342,7 @@ export default function PartnershipPage() {
         </section>
 
         {/* COMMERCIAL STRUCTURE */}
-        <section className="space-y-6 print-break">
+        <section id="section-commercial" data-section="commercial" className={`space-y-6 print-break ${sectionClass('commercial')}`}>
           <SectionHeading icon={Landmark}>Commercial Structure</SectionHeading>
           <p className="text-sm" style={{ color: '#3a5e47' }}>
             Transparent, predictable pricing aligned with your growth. No hidden costs.
@@ -271,7 +378,7 @@ export default function PartnershipPage() {
         </section>
 
         {/* TIMELINE */}
-        <section className="space-y-6">
+        <section id="section-timeline" data-section="timeline" className={`space-y-6 ${sectionClass('timeline')}`}>
           <SectionHeading icon={Clock}>Timeline to Go Live</SectionHeading>
           <div className="flex flex-col md:flex-row items-start md:items-center gap-0 md:gap-0">
             {TIMELINE_STEPS.map((step, i) => (
@@ -325,6 +432,17 @@ export default function PartnershipPage() {
           </div>
         </footer>
       </div>
+
+      {/* Scroll to top button */}
+      {showScrollTop && (
+        <button
+          onClick={scrollToTop}
+          className="no-print fixed bottom-6 right-6 z-40 w-10 h-10 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110"
+          style={{ background: '#1A6B3C', color: 'white' }}
+        >
+          <ChevronUp size={20} />
+        </button>
+      )}
     </div>
   );
 }

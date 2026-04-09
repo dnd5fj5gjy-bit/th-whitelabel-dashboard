@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react';
-import { StoreProvider } from './hooks/useStore.jsx';
+import { useState, useCallback, useMemo } from 'react';
+import { StoreProvider, useStore } from './hooks/useStore.jsx';
 import Layout from './components/Layout.jsx';
 import PipelineBoard from './modules/PipelineBoard.jsx';
 import AIOutreach from './modules/AIOutreach.jsx';
@@ -7,21 +7,10 @@ import Analytics from './modules/Analytics.jsx';
 import PartnershipPage from './modules/PartnershipPage.jsx';
 import AgreementHub from './modules/AgreementHub.jsx';
 import Settings from './modules/Settings.jsx';
+import PartnerProfile from './modules/PartnerProfile.jsx';
 import { Lock } from 'lucide-react';
 
 const PASSWORD = 'BW';
-
-function PlaceholderModule({ name }) {
-  return (
-    <div className="flex items-center justify-center h-[calc(100vh-53px)]">
-      <div className="text-center">
-        <div className="text-[#7DB892] text-sm mb-1">Module</div>
-        <div className="text-[#F0F7F2] text-xl font-semibold">{name}</div>
-        <div className="text-[#7DB892]/50 text-xs mt-2">Coming soon</div>
-      </div>
-    </div>
-  );
-}
 
 function PasswordGate({ onUnlock }) {
   const [pw, setPw] = useState('');
@@ -87,31 +76,105 @@ function Dashboard() {
   const [moduleParams, setModuleParams] = useState(null);
   const [globalSearch, setGlobalSearch] = useState('');
 
+  // Breadcrumb history for navigation
+  const [breadcrumbs, setBreadcrumbs] = useState([{ module: 'pipeline', label: 'Pipeline', params: null }]);
+
+  // Lifted partner profile state — accessible from ANY module
+  const [selectedPartnerId, setSelectedPartnerId] = useState(null);
+
+  const { partners } = useStore();
+  const selectedPartner = useMemo(
+    () => (selectedPartnerId ? partners.find((p) => p.id === selectedPartnerId) || null : null),
+    [selectedPartnerId, partners]
+  );
+
   const handleNavigate = useCallback((module, params = null) => {
+    // If navigating to 'partners' with a partnerId, open pipeline with that partner's profile
+    if (module === 'partners' && params?.partnerId) {
+      setActiveModule('pipeline');
+      setModuleParams(null);
+      setSelectedPartnerId(params.partnerId);
+      const partner = partners.find((p) => p.id === params.partnerId);
+      setBreadcrumbs((prev) => [
+        ...prev,
+        { module: 'pipeline', label: `Pipeline > ${partner?.name || 'Partner'}`, params: null },
+      ]);
+      return;
+    }
+
     setActiveModule(module);
     setModuleParams(params);
+
+    // Build breadcrumb label
+    const MODULE_LABELS = {
+      pipeline: 'Pipeline',
+      outreach: 'AI Outreach',
+      analytics: 'Analytics',
+      'partnership-page': 'Partnership Page',
+      agreements: 'Agreements',
+      settings: 'Settings',
+    };
+    const label = MODULE_LABELS[module] || module;
+    setBreadcrumbs((prev) => {
+      // If navigating to an already-visited module, trim back to it
+      const existingIdx = prev.findIndex((b) => b.module === module && !params);
+      if (existingIdx >= 0) return prev.slice(0, existingIdx + 1);
+      return [...prev, { module, label, params }];
+    });
+  }, [partners]);
+
+  const handleBreadcrumbBack = useCallback(() => {
+    if (breadcrumbs.length <= 1) return;
+    const prev = breadcrumbs[breadcrumbs.length - 2];
+    setActiveModule(prev.module);
+    setModuleParams(prev.params);
+    setBreadcrumbs((b) => b.slice(0, -1));
+  }, [breadcrumbs]);
+
+  const openPartnerProfile = useCallback((partnerId) => {
+    setSelectedPartnerId(partnerId);
+  }, []);
+
+  const closePartnerProfile = useCallback(() => {
+    setSelectedPartnerId(null);
   }, []);
 
   const renderModule = useCallback(() => {
     switch (activeModule) {
       case 'pipeline':
-        return <PipelineBoard globalSearch={globalSearch} onNavigate={handleNavigate} />;
-      case 'partners':
-        return <PlaceholderModule name="Partner Profiles" />;
+        return (
+          <PipelineBoard
+            globalSearch={globalSearch}
+            onNavigate={handleNavigate}
+            onOpenProfile={openPartnerProfile}
+          />
+        );
       case 'outreach':
-        return <AIOutreach params={moduleParams} />;
+        return <AIOutreach params={moduleParams} onNavigate={handleNavigate} />;
       case 'analytics':
         return <Analytics onNavigate={handleNavigate} />;
       case 'partnership-page':
         return <PartnershipPage />;
       case 'agreements':
-        return <AgreementHub />;
+        return <AgreementHub params={moduleParams} />;
       case 'settings':
         return <Settings />;
       default:
-        return <PipelineBoard globalSearch={globalSearch} onNavigate={handleNavigate} />;
+        return (
+          <PipelineBoard
+            globalSearch={globalSearch}
+            onNavigate={handleNavigate}
+            onOpenProfile={openPartnerProfile}
+          />
+        );
     }
-  }, [activeModule, globalSearch, moduleParams, handleNavigate]);
+  }, [activeModule, globalSearch, moduleParams, handleNavigate, openPartnerProfile]);
+
+  // Current breadcrumb text
+  const breadcrumbText = useMemo(() => {
+    if (breadcrumbs.length <= 1) return '';
+    return breadcrumbs.map((b) => b.label).join(' > ');
+  }, [breadcrumbs]);
 
   return (
     <Layout
@@ -119,8 +182,21 @@ function Dashboard() {
       onNavigate={handleNavigate}
       globalSearch={globalSearch}
       onGlobalSearchChange={setGlobalSearch}
+      breadcrumbText={breadcrumbText}
+      onBreadcrumbBack={handleBreadcrumbBack}
+      canGoBack={breadcrumbs.length > 1}
+      onOpenProfile={openPartnerProfile}
     >
       {renderModule()}
+
+      {/* Global partner profile slide-over — accessible from any module */}
+      {selectedPartner && (
+        <PartnerProfile
+          partner={selectedPartner}
+          onClose={closePartnerProfile}
+          onNavigate={handleNavigate}
+        />
+      )}
     </Layout>
   );
 }

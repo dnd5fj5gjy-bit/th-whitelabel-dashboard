@@ -3,22 +3,23 @@ import { useStore } from '../hooks/useStore';
 import { format } from 'date-fns';
 import {
   FileText, ChevronDown, Download, Copy, Check, Building2,
-  Calendar, Loader2, AlertCircle
+  Calendar, Loader2, AlertCircle, ArrowRight, Mail, ClipboardCopy
 } from 'lucide-react';
 
-const AGREEMENT_STATUS_OPTIONS = [
-  { value: 'not-started', label: 'Not Started' },
-  { value: 'drafted', label: 'Drafted' },
-  { value: 'sent', label: 'Sent' },
-  { value: 'signed', label: 'Signed' },
+const AGREEMENT_STEPS = [
+  { value: 'not-started', label: 'Not Started', buttonLabel: 'Start Drafting' },
+  { value: 'drafted', label: 'Drafted', buttonLabel: 'Mark as Sent' },
+  { value: 'sent', label: 'Sent', buttonLabel: 'Mark as Signed' },
+  { value: 'signed', label: 'Signed', buttonLabel: 'Complete' },
 ];
 
-export default function AgreementHub() {
+export default function AgreementHub({ params }) {
   const { partners, settings, updateAgreementStatus, addInteraction } = useStore();
   const activePartners = useMemo(() => partners.filter(p => !p.archived && !p.notCompatible), [partners]);
 
   const [selectedPartnerId, setSelectedPartnerId] = useState('');
   const [copied, setCopied] = useState(false);
+  const [showSentConfirm, setShowSentConfirm] = useState(false);
   const agreementRef = useRef(null);
 
   // Form fields
@@ -29,6 +30,16 @@ export default function AgreementHub() {
   const [perPatientFee, setPerPatientFee] = useState('10');
   const [revenueShare, setRevenueShare] = useState('15');
   const [effectiveDate, setEffectiveDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+
+  // Auto-select from params
+  useEffect(() => {
+    if (params?.partnerId) {
+      const exists = partners.find(p => p.id === params.partnerId);
+      if (exists) {
+        setSelectedPartnerId(params.partnerId);
+      }
+    }
+  }, [params?.partnerId, partners]);
 
   const partner = useMemo(() => partners.find(p => p.id === selectedPartnerId), [partners, selectedPartnerId]);
 
@@ -44,7 +55,27 @@ export default function AgreementHub() {
   const pathways = [edActive && 'Erectile Dysfunction (ED)', trtActive && 'Testosterone Replacement Therapy (TRT)'].filter(Boolean);
   const pathwayText = pathways.length > 0 ? pathways.join(' and ') : 'TRT and/or ED (to be confirmed)';
 
-  function handleStatusChange(newStatus) {
+  // Current step index
+  const currentStatus = partner?.agreementStatus || 'not-started';
+  const currentStepIdx = AGREEMENT_STEPS.findIndex(s => s.value === currentStatus);
+
+  function handleAdvanceStatus() {
+    if (!partner) return;
+    const nextIdx = currentStepIdx + 1;
+    if (nextIdx >= AGREEMENT_STEPS.length) return;
+
+    const nextStatus = AGREEMENT_STEPS[nextIdx].value;
+
+    // If advancing to "sent", show confirmation
+    if (nextStatus === 'sent') {
+      setShowSentConfirm(true);
+      return;
+    }
+
+    doAdvanceStatus(nextStatus);
+  }
+
+  function doAdvanceStatus(newStatus) {
     if (!partner) return;
     const prevStatus = partner.agreementStatus;
     updateAgreementStatus(partner.id, newStatus);
@@ -59,6 +90,33 @@ export default function AgreementHub() {
         nextActionDue: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
       });
     }
+    if (newStatus === 'signed') {
+      addInteraction(partner.id, {
+        id: `int-${Date.now()}`,
+        date: new Date().toISOString().split('T')[0],
+        type: 'Note',
+        subject: 'Partnership Agreement Signed',
+        outcome: 'Agreement fully executed',
+      });
+    }
+    setShowSentConfirm(false);
+  }
+
+  function handleStatusClick(stepValue) {
+    if (!partner) return;
+    updateAgreementStatus(partner.id, stepValue);
+    setShowSentConfirm(false);
+  }
+
+  function handleQuickDraft() {
+    if (!partner) return;
+    // Set defaults and advance to drafted
+    setSetupFee('5,000');
+    setMonthlyFee('1,000');
+    setPerPatientFee('10');
+    setRevenueShare('15');
+    setEffectiveDate(format(new Date(), 'yyyy-MM-dd'));
+    updateAgreementStatus(partner.id, 'drafted');
   }
 
   function handleDownloadPDF() {
@@ -71,6 +129,12 @@ export default function AgreementHub() {
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  function handleConfirmSent() {
+    // Copy text and advance
+    handleCopyText();
+    doAdvanceStatus('sent');
   }
 
   return (
@@ -102,6 +166,72 @@ export default function AgreementHub() {
         </div>
       </div>
 
+      {/* Status progress bar */}
+      {partner && (
+        <div className="no-print rounded-lg border border-[#1A3D26] bg-[#0F2318] px-5 py-4">
+          <div className="flex items-center gap-2">
+            {AGREEMENT_STEPS.map((step, idx) => {
+              const isComplete = idx < currentStepIdx;
+              const isCurrent = idx === currentStepIdx;
+              return (
+                <div key={step.value} className="flex items-center gap-2 flex-1">
+                  <button
+                    onClick={() => handleStatusClick(step.value)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-xs font-medium transition-all flex-1 justify-center ${
+                      isComplete
+                        ? 'bg-[#2ECC71]/20 text-[#2ECC71] border border-[#2ECC71]/30'
+                        : isCurrent
+                          ? 'bg-[#1A6B3C] text-white border border-[#2ECC71]'
+                          : 'bg-[#0A1A12] text-[#4a7a5a] border border-[#1A3D26]'
+                    }`}
+                  >
+                    {isComplete && <Check size={12} />}
+                    {step.label}
+                  </button>
+                  {idx < AGREEMENT_STEPS.length - 1 && (
+                    <ArrowRight size={14} className={`shrink-0 ${isComplete ? 'text-[#2ECC71]' : 'text-[#1A3D26]'}`} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Sent confirmation modal */}
+      {showSentConfirm && partner && (
+        <div className="no-print rounded-lg border border-[#E07B00]/40 bg-[#E07B00]/10 p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Mail size={16} className="text-[#E07B00]" />
+            <span className="text-sm font-medium text-[#F0F7F2]">Confirm: Mark as Sent</span>
+          </div>
+          <p className="text-xs text-[#7DB892]">
+            Partner email: <span className="text-[#F0F7F2]">{partner.contactEmail || 'Not set'}</span>
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleConfirmSent}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs bg-[#1A6B3C] hover:bg-[#2ECC71]/80 text-white transition-colors"
+            >
+              <ClipboardCopy size={12} />
+              Copy Agreement & Mark Sent
+            </button>
+            <button
+              onClick={() => doAdvanceStatus('sent')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs bg-[#1A3D26] hover:bg-[#1A6B3C] text-[#F0F7F2] transition-colors"
+            >
+              Mark Sent (no copy)
+            </button>
+            <button
+              onClick={() => setShowSentConfirm(false)}
+              className="text-xs text-[#7DB892] hover:text-[#F0F7F2] px-2 py-1.5"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="no-print grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Config panel */}
         <div className="space-y-4">
@@ -128,25 +258,36 @@ export default function AgreementHub() {
             <div className="rounded-lg border border-[#1A3D26] bg-[#0F2318] p-4 space-y-2">
               <h3 className="text-sm font-semibold text-[#F0F7F2] flex items-center gap-2">
                 <Building2 size={14} className="text-[#7DB892]" />
-                Partner Details (Auto)
+                Auto-filled
               </h3>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div><span className="text-[#7DB892]">Name:</span> <span className="text-[#F0F7F2]">{partner.name}</span></div>
                 <div><span className="text-[#7DB892]">Mode:</span> <span className="text-[#F0F7F2]">{operatingMode}</span></div>
                 <div className="col-span-2"><span className="text-[#7DB892]">Pathways:</span> <span className="text-[#F0F7F2]">{pathwayText}</span></div>
+                <div className="col-span-2"><span className="text-[#7DB892]">Effective:</span> <span className="text-[#F0F7F2]">{effectiveDate ? format(new Date(effectiveDate), 'd MMM yyyy') : 'Today'}</span></div>
               </div>
             </div>
           )}
 
-          {/* Manual fields */}
+          {/* Manual fields -- only truly needed ones */}
           <div className="rounded-lg border border-[#1A3D26] bg-[#0F2318] p-4 space-y-3">
-            <h3 className="text-sm font-semibold text-[#F0F7F2]">Agreement Details</h3>
+            <h3 className="text-sm font-semibold text-[#F0F7F2]">Required Details</h3>
             <Field label="Partner Company Number" value={partnerCompanyNumber} onChange={setPartnerCompanyNumber} placeholder="e.g. 12345678" />
             <Field label="Partner Registered Address" value={partnerRegisteredAddress} onChange={setPartnerRegisteredAddress} placeholder="Full registered address" textarea />
-            <Field label="Setup Fee (\u00a3)" value={setupFee} onChange={setSetupFee} placeholder="5,000" />
-            <Field label="Monthly Platform Fee (\u00a3)" value={monthlyFee} onChange={setMonthlyFee} placeholder="1,000" />
-            <Field label="Per-Patient Fee (\u00a3/mo)" value={perPatientFee} onChange={setPerPatientFee} placeholder="10" />
-            <Field label="Revenue Share (%)" value={revenueShare} onChange={setRevenueShare} placeholder="15" />
+          </div>
+
+          {/* Fee fields with defaults */}
+          <div className="rounded-lg border border-[#1A3D26] bg-[#0F2318] p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-[#F0F7F2]">Fee Structure</h3>
+              <span className="text-[10px] text-[#4a7a5a]">Pre-filled with defaults</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Setup Fee" value={setupFee} onChange={setSetupFee} placeholder="TBC" />
+              <Field label="Monthly Fee" value={monthlyFee} onChange={setMonthlyFee} placeholder="TBC" />
+              <Field label="Per-Patient Fee" value={perPatientFee} onChange={setPerPatientFee} placeholder="TBC" />
+              <Field label="Revenue Share (%)" value={revenueShare} onChange={setRevenueShare} placeholder="TBC" />
+            </div>
             <div>
               <label className="block text-xs text-[#7DB892] mb-1">Effective Date</label>
               <input
@@ -158,44 +299,28 @@ export default function AgreementHub() {
             </div>
           </div>
 
-          {/* Agreement status */}
-          {partner && (
-            <div className="rounded-lg border border-[#1A3D26] bg-[#0F2318] p-4 space-y-3">
-              <h3 className="text-sm font-semibold text-[#F0F7F2]">Agreement Status</h3>
-              <div className="flex flex-wrap gap-2">
-                {AGREEMENT_STATUS_OPTIONS.map(opt => (
-                  <button
-                    key={opt.value}
-                    onClick={() => handleStatusChange(opt.value)}
-                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${partner.agreementStatus === opt.value
-                      ? 'bg-[#2ECC71] text-[#0A1A12]'
-                      : 'bg-[#0A1A12] text-[#7DB892] border border-[#1A3D26] hover:border-[#2ECC71]'
-                      }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-              {partner.agreementStatus === 'sent' && (
-                <p className="text-xs text-[#2ECC71] flex items-center gap-1">
-                  <Check size={12} /> Interaction logged automatically
-                </p>
-              )}
-            </div>
-          )}
-
           {/* Actions */}
           <div className="space-y-2">
+            {/* Primary action button -- changes based on status */}
+            {partner && currentStepIdx < AGREEMENT_STEPS.length - 1 && (
+              <button
+                onClick={currentStatus === 'not-started' ? handleQuickDraft : handleAdvanceStatus}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#1A6B3C] hover:bg-[#2ECC71]/80 text-white text-sm font-medium transition-colors"
+              >
+                <ArrowRight size={14} />
+                {currentStatus === 'not-started' ? 'Quick Draft (fill defaults)' : AGREEMENT_STEPS[currentStepIdx].buttonLabel}
+              </button>
+            )}
             <button
               onClick={handleDownloadPDF}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#1A6B3C] hover:bg-[#2ECC71]/80 text-white text-sm font-medium transition-colors"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#1A3D26] hover:bg-[#1A6B3C] text-[#F0F7F2] text-sm font-medium transition-colors"
             >
               <Download size={14} />
               Download as PDF
             </button>
             <button
               onClick={handleCopyText}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#1A3D26] hover:bg-[#1A6B3C] text-[#F0F7F2] text-sm font-medium transition-colors"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#0A1A12] border border-[#1A3D26] hover:border-[#1A6B3C] text-[#F0F7F2] text-sm font-medium transition-colors"
             >
               {copied ? <Check size={14} className="text-[#2ECC71]" /> : <Copy size={14} />}
               {copied ? 'Copied' : 'Copy Full Text'}
@@ -203,25 +328,33 @@ export default function AgreementHub() {
           </div>
         </div>
 
-        {/* Agreement document */}
+        {/* Agreement document -- scrollable panel */}
         <div className="lg:col-span-2">
-          <AgreementDocument
-            ref={agreementRef}
-            thName={thName}
-            thCompanyNumber={thCompanyNumber}
-            thAddress={thAddress}
-            thEmail={thEmail}
-            partnerName={partnerName}
-            partnerCompanyNumber={partnerCompanyNumber || '[COMPANY NUMBER]'}
-            partnerAddress={partnerRegisteredAddress || '[REGISTERED ADDRESS]'}
-            operatingMode={operatingMode}
-            pathwayText={pathwayText}
-            setupFee={setupFee || '[AMOUNT]'}
-            monthlyFee={monthlyFee || '[AMOUNT]'}
-            perPatientFee={perPatientFee || '[AMOUNT]'}
-            revenueShare={revenueShare || '[PERCENTAGE]'}
-            effectiveDate={effectiveDate ? format(new Date(effectiveDate), 'd MMMM yyyy') : '[DATE]'}
-          />
+          <div className="rounded-lg border border-[#1A3D26] bg-[#0F2318] overflow-hidden">
+            <div className="px-4 py-2 border-b border-[#1A3D26] bg-[#0A1A12]/50 flex items-center justify-between">
+              <span className="text-xs text-[#7DB892]">Document Preview</span>
+              <span className="text-xs text-[#4a7a5a]">Scroll to review</span>
+            </div>
+            <div className="max-h-[75vh] overflow-y-auto">
+              <AgreementDocument
+                ref={agreementRef}
+                thName={thName}
+                thCompanyNumber={thCompanyNumber}
+                thAddress={thAddress}
+                thEmail={thEmail}
+                partnerName={partnerName}
+                partnerCompanyNumber={partnerCompanyNumber || '[COMPANY NUMBER]'}
+                partnerAddress={partnerRegisteredAddress || '[REGISTERED ADDRESS]'}
+                operatingMode={operatingMode}
+                pathwayText={pathwayText}
+                setupFee={setupFee || 'TBC'}
+                monthlyFee={monthlyFee || 'TBC'}
+                perPatientFee={perPatientFee || 'TBC'}
+                revenueShare={revenueShare || 'TBC'}
+                effectiveDate={effectiveDate ? format(new Date(effectiveDate), 'd MMMM yyyy') : '[DATE]'}
+              />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -238,10 +371,10 @@ export default function AgreementHub() {
           partnerAddress={partnerRegisteredAddress || '[REGISTERED ADDRESS]'}
           operatingMode={operatingMode}
           pathwayText={pathwayText}
-          setupFee={setupFee || '[AMOUNT]'}
-          monthlyFee={monthlyFee || '[AMOUNT]'}
-          perPatientFee={perPatientFee || '[AMOUNT]'}
-          revenueShare={revenueShare || '[PERCENTAGE]'}
+          setupFee={setupFee || 'TBC'}
+          monthlyFee={monthlyFee || 'TBC'}
+          perPatientFee={perPatientFee || 'TBC'}
+          revenueShare={revenueShare || 'TBC'}
           effectiveDate={effectiveDate ? format(new Date(effectiveDate), 'd MMMM yyyy') : '[DATE]'}
         />
       </div>
@@ -272,7 +405,7 @@ const AgreementDocument = forwardRef(function AgreementDocument({
   setupFee, monthlyFee, perPatientFee, revenueShare, effectiveDate
 }, ref) {
   return (
-    <div ref={ref} className="agreement-document rounded-lg border border-[#1A3D26] bg-[#0F2318] p-8 text-[#F0F7F2] text-sm leading-relaxed space-y-6 max-h-[80vh] overflow-y-auto print:max-h-none print:overflow-visible">
+    <div ref={ref} className="agreement-document p-8 text-[#F0F7F2] text-sm leading-relaxed space-y-6 print:max-h-none print:overflow-visible">
 
       {/* Title page */}
       <div className="text-center space-y-4 pb-6 border-b border-[#1A3D26]">
@@ -310,7 +443,7 @@ const AgreementDocument = forwardRef(function AgreementDocument({
         <p>(C) The parties wish to enter into this Agreement to set out the terms upon which Ted's Health will provide the Platform and Services to the Partner under the <strong>{operatingMode}</strong> operating model.</p>
       </div>
 
-      {/* Clause 1 — Definitions */}
+      {/* Clause 1 */}
       <div className="space-y-3">
         <h2 className="text-lg font-bold text-[#2ECC71]">1. DEFINITIONS AND INTERPRETATION</h2>
         <p>1.1 In this Agreement, unless the context otherwise requires, the following terms shall have the meanings set out below:</p>
@@ -334,7 +467,7 @@ const AgreementDocument = forwardRef(function AgreementDocument({
         <p>1.2 In this Agreement, unless the context otherwise requires: (a) references to clauses and Schedules are to clauses of, and Schedules to, this Agreement; (b) headings are for convenience only and shall not affect interpretation; (c) words in the singular include the plural and vice versa; (d) a reference to a statute or statutory provision includes any subordinate legislation made under it and any modification or re-enactment of it.</p>
       </div>
 
-      {/* Clause 2 — Appointment and Scope */}
+      {/* Clause 2 */}
       <div className="space-y-3">
         <h2 className="text-lg font-bold text-[#2ECC71]">2. APPOINTMENT AND SCOPE</h2>
         <p>2.1 Ted's Health hereby agrees to provide the Platform and Services to the Partner on a non-exclusive, white-label basis for the delivery of {pathwayText} services in the United Kingdom.</p>
@@ -344,11 +477,10 @@ const AgreementDocument = forwardRef(function AgreementDocument({
         <p>2.5 The Partner acknowledges that all clinical services delivered through the Platform are provided under the clinical governance framework of Ted's Health (in the case of the Full Service model) or the Partner's own CQC registration (in the case of the Platform Only model).</p>
       </div>
 
-      {/* Clause 3 — Operating Model */}
+      {/* Clause 3 */}
       <div className="space-y-3">
         <h2 className="text-lg font-bold text-[#2ECC71]">3. OPERATING MODEL</h2>
         <p>3.1 This Agreement is entered into under the <strong>{operatingMode}</strong> operating model.</p>
-
         <p className="font-semibold text-[#F0F7F2] mt-4">Full Service Model</p>
         <p>3.2 Where the Operating Model is Full Service, Ted's Health shall provide:</p>
         <div className="pl-6 space-y-1">
@@ -363,7 +495,6 @@ const AgreementDocument = forwardRef(function AgreementDocument({
           <p>(i) ongoing patient management, monitoring, and clinical follow-up; and</p>
           <p>(j) adverse event reporting and clinical audit.</p>
         </div>
-
         <p className="font-semibold text-[#F0F7F2] mt-4">Platform Only Model</p>
         <p>3.3 Where the Operating Model is Platform Only, Ted's Health shall provide:</p>
         <div className="pl-6 space-y-1">
@@ -375,7 +506,6 @@ const AgreementDocument = forwardRef(function AgreementDocument({
           <p>(f) the patient management system and clinician interface; and</p>
           <p>(g) the partner portal and revenue dashboard.</p>
         </div>
-
         <p>3.4 Under the Platform Only model, the Partner shall be responsible for:</p>
         <div className="pl-6 space-y-1">
           <p>(a) employing or contracting GMC-registered doctors with appropriate training in men's health;</p>
@@ -386,7 +516,7 @@ const AgreementDocument = forwardRef(function AgreementDocument({
         </div>
       </div>
 
-      {/* Clause 4 — Partner Obligations */}
+      {/* Clause 4 */}
       <div className="space-y-3">
         <h2 className="text-lg font-bold text-[#2ECC71]">4. PARTNER OBLIGATIONS</h2>
         <p>4.1 The Partner shall:</p>
@@ -395,7 +525,7 @@ const AgreementDocument = forwardRef(function AgreementDocument({
           <p>(b) ensure that all marketing and promotional materials relating to the Services comply with Applicable Law, including ASA and MHRA advertising guidelines;</p>
           <p>(c) not make any claims about the clinical efficacy of treatments that are not supported by the clinical protocols;</p>
           <p>(d) direct all patient clinical queries to the appropriate clinical team (Ted's Health team under Full Service, Partner's own team under Platform Only);</p>
-          <p>(e) maintain adequate insurance cover, including public liability insurance of not less than \u00a32,000,000 per claim;</p>
+          <p>(e) maintain adequate insurance cover, including public liability insurance of not less than {'\u00a3'}2,000,000 per claim;</p>
           <p>(f) comply with all Applicable Law in the performance of its obligations under this Agreement;</p>
           <p>(g) not attempt to reverse-engineer, decompile, or otherwise access the source code of the Platform;</p>
           <p>(h) notify Ted's Health immediately of any complaint, adverse event, or regulatory enquiry relating to the Services; and</p>
@@ -404,13 +534,13 @@ const AgreementDocument = forwardRef(function AgreementDocument({
         <p>4.2 The Partner acknowledges that failure to comply with any obligation under this clause 4 constitutes a material breach of this Agreement.</p>
       </div>
 
-      {/* Clause 5 — Fees and Payment */}
+      {/* Clause 5 */}
       <div className="space-y-3">
         <h2 className="text-lg font-bold text-[#2ECC71]">5. FEES AND PAYMENT</h2>
         <p>5.1 The Partner shall pay the Fees as set out in Schedule 1 to this Agreement.</p>
-        <p>5.2 The Setup Fee of <strong>\u00a3{setupFee}</strong> is payable within 14 days of execution of this Agreement and is non-refundable.</p>
-        <p>5.3 The Monthly Platform Fee of <strong>\u00a3{monthlyFee}</strong> per calendar month is payable in advance on the first business day of each month.</p>
-        <p>5.4 The Per-Patient Fee of <strong>\u00a3{perPatientFee}</strong> per active patient per month shall be invoiced monthly in arrears based on the number of patients who accessed any clinical service during the relevant month.</p>
+        <p>5.2 The Setup Fee of <strong>{'\u00a3'}{setupFee}</strong> is payable within 14 days of execution of this Agreement and is non-refundable.</p>
+        <p>5.3 The Monthly Platform Fee of <strong>{'\u00a3'}{monthlyFee}</strong> per calendar month is payable in advance on the first business day of each month.</p>
+        <p>5.4 The Per-Patient Fee of <strong>{'\u00a3'}{perPatientFee}</strong> per active patient per month shall be invoiced monthly in arrears based on the number of patients who accessed any clinical service during the relevant month.</p>
         <p>5.5 The Revenue Share of <strong>{revenueShare}%</strong> of net consultation and treatment revenue shall be calculated and invoiced monthly in arrears.</p>
         <p>5.6 All Fees are exclusive of VAT, which shall be payable in addition at the prevailing rate.</p>
         <p>5.7 Ted's Health shall issue invoices within 5 business days of the end of each calendar month. Payment is due within 30 days of the date of invoice.</p>
@@ -423,7 +553,7 @@ const AgreementDocument = forwardRef(function AgreementDocument({
         <p>5.9 Ted's Health may increase the Fees at the start of each Renewal Term by providing not less than 60 days' written notice. Any increase shall not exceed the greater of (a) 5% or (b) the percentage increase in the Consumer Prices Index over the preceding 12 months.</p>
       </div>
 
-      {/* Clause 6 — Intellectual Property */}
+      {/* Clause 6 */}
       <div className="space-y-3">
         <h2 className="text-lg font-bold text-[#2ECC71]">6. INTELLECTUAL PROPERTY</h2>
         <p>6.1 All Intellectual Property Rights in the Platform, including but not limited to the software, algorithms, clinical protocols, user interface designs, and documentation, are and shall remain the exclusive property of Ted's Health.</p>
@@ -434,7 +564,7 @@ const AgreementDocument = forwardRef(function AgreementDocument({
         <p>6.6 Ted's Health may use anonymised and aggregated data derived from the operation of the Platform for the purposes of improving its services, conducting research, and benchmarking, provided that no Patient or Partner can be identified from such data.</p>
       </div>
 
-      {/* Clause 7 — Data Protection */}
+      {/* Clause 7 */}
       <div className="space-y-3">
         <h2 className="text-lg font-bold text-[#2ECC71]">7. DATA PROTECTION AND PATIENT CONFIDENTIALITY</h2>
         <p>7.1 Each party shall comply with all Applicable Law relating to data protection, including the Data Protection Act 2018 and UK GDPR.</p>
@@ -456,7 +586,7 @@ const AgreementDocument = forwardRef(function AgreementDocument({
         <p>7.6 Patient Data shall not be transferred outside the United Kingdom without the prior written consent of the data controller and appropriate safeguards being in place.</p>
       </div>
 
-      {/* Clause 8 — Liability and Indemnity */}
+      {/* Clause 8 */}
       <div className="space-y-3">
         <h2 className="text-lg font-bold text-[#2ECC71]">8. LIABILITY AND INDEMNITY</h2>
         <p>8.1 Nothing in this Agreement shall exclude or limit either party's liability for: (a) death or personal injury caused by its negligence; (b) fraud or fraudulent misrepresentation; or (c) any other liability which cannot be excluded or limited by law.</p>
@@ -473,10 +603,10 @@ const AgreementDocument = forwardRef(function AgreementDocument({
           <p>(c) any claim by a third party relating to the Partner's marketing or promotion of the Services; and</p>
           <p>(d) under the Platform Only model, any clinical act or omission of the Partner's clinicians.</p>
         </div>
-        <p>8.4 Ted's Health shall maintain professional indemnity insurance of not less than \u00a35,000,000 per claim and shall provide evidence of such insurance to the Partner upon reasonable request.</p>
+        <p>8.4 Ted's Health shall maintain professional indemnity insurance of not less than {'\u00a3'}5,000,000 per claim and shall provide evidence of such insurance to the Partner upon reasonable request.</p>
       </div>
 
-      {/* Clause 9 — Term and Termination */}
+      {/* Clause 9 */}
       <div className="space-y-3">
         <h2 className="text-lg font-bold text-[#2ECC71]">9. TERM AND TERMINATION</h2>
         <p>9.1 This Agreement shall commence on the Commencement Date and shall continue for the Initial Term of 12 months.</p>
@@ -507,7 +637,7 @@ const AgreementDocument = forwardRef(function AgreementDocument({
         <p>9.6 Ted's Health shall use reasonable endeavours to provide continuity of care for existing Patients for a period of not less than 90 days following termination to allow for safe clinical handover.</p>
       </div>
 
-      {/* Clause 10 — General */}
+      {/* Clause 10 */}
       <div className="space-y-3">
         <h2 className="text-lg font-bold text-[#2ECC71]">10. GENERAL PROVISIONS</h2>
         <p><strong>10.1 Confidentiality.</strong> Each party shall keep confidential all Confidential Information of the other party and shall not disclose such information to any third party without the prior written consent of the disclosing party, except: (a) to its employees, officers, advisers, or sub-contractors who need to know such information for the purposes of this Agreement, provided they are bound by equivalent obligations of confidentiality; (b) as required by law, regulation, or court order; or (c) to the extent the information is already in the public domain through no fault of the receiving party.</p>
@@ -522,11 +652,10 @@ const AgreementDocument = forwardRef(function AgreementDocument({
         <p><strong>10.10 Governing Law and Jurisdiction.</strong> This Agreement shall be governed by and construed in accordance with the laws of England and Wales. The parties irrevocably submit to the exclusive jurisdiction of the courts of England and Wales for the resolution of any dispute arising out of or in connection with this Agreement.</p>
       </div>
 
-      {/* Execution block */}
+      {/* Execution */}
       <div className="space-y-6 pt-6 border-t border-[#1A3D26]">
         <h2 className="text-lg font-bold text-[#2ECC71]">EXECUTION</h2>
         <p>IN WITNESS WHEREOF, the parties have executed this Agreement as of the date first written above.</p>
-
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <div className="space-y-4">
             <p className="font-semibold">Signed for and on behalf of {thName}:</p>
@@ -545,11 +674,10 @@ const AgreementDocument = forwardRef(function AgreementDocument({
         </div>
       </div>
 
-      {/* SCHEDULE 1 — Fees */}
+      {/* SCHEDULE 1 */}
       <div className="space-y-3 pt-8 border-t border-[#1A3D26]">
-        <h2 className="text-lg font-bold text-[#2ECC71]">SCHEDULE 1 — FEES</h2>
+        <h2 className="text-lg font-bold text-[#2ECC71]">SCHEDULE 1 -- FEES</h2>
         <p>The following fees shall be payable by the Partner to Ted's Health:</p>
-
         <div className="overflow-x-auto">
           <table className="w-full text-sm border-collapse">
             <thead>
@@ -562,17 +690,17 @@ const AgreementDocument = forwardRef(function AgreementDocument({
             <tbody>
               <tr className="border-b border-[#1A3D26]">
                 <td className="px-4 py-2 text-[#F0F7F2]">Setup Fee</td>
-                <td className="px-4 py-2 font-mono text-[#F0F7F2]">\u00a3{setupFee}</td>
+                <td className="px-4 py-2 font-mono text-[#F0F7F2]">{'\u00a3'}{setupFee}</td>
                 <td className="px-4 py-2 text-[#7DB892]">One-time. Due within 14 days of execution. Non-refundable.</td>
               </tr>
               <tr className="border-b border-[#1A3D26]">
                 <td className="px-4 py-2 text-[#F0F7F2]">Monthly Platform Fee</td>
-                <td className="px-4 py-2 font-mono text-[#F0F7F2]">\u00a3{monthlyFee}/month</td>
+                <td className="px-4 py-2 font-mono text-[#F0F7F2]">{'\u00a3'}{monthlyFee}/month</td>
                 <td className="px-4 py-2 text-[#7DB892]">Payable in advance on the 1st business day of each calendar month.</td>
               </tr>
               <tr className="border-b border-[#1A3D26]">
                 <td className="px-4 py-2 text-[#F0F7F2]">Per-Patient Fee</td>
-                <td className="px-4 py-2 font-mono text-[#F0F7F2]">\u00a3{perPatientFee}/patient/month</td>
+                <td className="px-4 py-2 font-mono text-[#F0F7F2]">{'\u00a3'}{perPatientFee}/patient/month</td>
                 <td className="px-4 py-2 text-[#7DB892]">Invoiced monthly in arrears based on active patients.</td>
               </tr>
               <tr className="border-b border-[#1A3D26]">
@@ -583,7 +711,6 @@ const AgreementDocument = forwardRef(function AgreementDocument({
             </tbody>
           </table>
         </div>
-
         <div className="space-y-2 text-sm">
           <p><strong>1.1 Definitions.</strong> "Active patient" means any Patient who has accessed a consultation, received a prescription, or had a blood test processed during the relevant calendar month.</p>
           <p><strong>1.2 Net Revenue.</strong> Net consultation and treatment revenue means gross revenue from consultations and treatments less: (a) VAT; (b) pharmacy dispensing costs; (c) laboratory testing costs; (d) nursing costs; and (e) any patient refunds or chargebacks.</p>
@@ -593,24 +720,21 @@ const AgreementDocument = forwardRef(function AgreementDocument({
         </div>
       </div>
 
-      {/* SCHEDULE 2 — Clinical Governance */}
+      {/* SCHEDULE 2 */}
       <div className="space-y-3 pt-8 border-t border-[#1A3D26]">
-        <h2 className="text-lg font-bold text-[#2ECC71]">SCHEDULE 2 — CLINICAL GOVERNANCE FRAMEWORK</h2>
-
+        <h2 className="text-lg font-bold text-[#2ECC71]">SCHEDULE 2 -- CLINICAL GOVERNANCE FRAMEWORK</h2>
         <p><strong>1. Clinical Leadership</strong></p>
         <div className="pl-6 space-y-1">
           <p>1.1 Ted's Health's Chief Medical Officer (currently Dr Jonathan Andrews) shall have overall responsibility for clinical governance across all white-label partnerships operating under the Full Service model.</p>
           <p>1.2 Under the Platform Only model, the Partner shall appoint a named clinical lead who shall be responsible for clinical governance within the Partner's service.</p>
           <p>1.3 The clinical lead (whether Ted's Health CMO or the Partner's appointee) shall review and approve all clinical protocols before they are deployed on the Platform.</p>
         </div>
-
         <p className="mt-4"><strong>2. Clinical Protocols</strong></p>
         <div className="pl-6 space-y-1">
           <p>2.1 All clinical pathways on the Platform shall operate in accordance with protocols developed by Ted's Health and approved by the relevant clinical lead.</p>
           <p>2.2 Protocols shall cover: (a) patient eligibility and screening; (b) consultation and assessment; (c) prescribing criteria and contraindications; (d) blood test requirements and monitoring schedules; (e) dose adjustment and titration; (f) adverse event identification and management; and (g) patient follow-up and discharge.</p>
           <p>2.3 Protocols shall be reviewed at least quarterly and updated in line with current clinical evidence and regulatory guidance.</p>
         </div>
-
         <p className="mt-4"><strong>3. Adverse Event Reporting</strong></p>
         <div className="pl-6 space-y-1">
           <p>3.1 All adverse events shall be reported through the Platform's built-in adverse event reporting system.</p>
@@ -618,14 +742,12 @@ const AgreementDocument = forwardRef(function AgreementDocument({
           <p>3.3 The clinical lead shall determine whether notification to the MHRA, CQC, or other regulatory body is required and shall submit such notifications within the applicable timeframes.</p>
           <p>3.4 A root cause analysis shall be conducted for all serious adverse events within 72 hours.</p>
         </div>
-
         <p className="mt-4"><strong>4. Clinical Audit</strong></p>
         <div className="pl-6 space-y-1">
           <p>4.1 Ted's Health shall conduct clinical audits of the Platform and associated services on a quarterly basis.</p>
           <p>4.2 Audits shall review: (a) prescribing patterns and compliance with protocols; (b) patient outcomes and satisfaction; (c) adverse event rates and management; (d) clinician performance; and (e) compliance with regulatory requirements.</p>
           <p>4.3 Audit findings and improvement actions shall be shared with the Partner within 14 days of audit completion.</p>
         </div>
-
         <p className="mt-4"><strong>5. Regulatory Compliance</strong></p>
         <div className="pl-6 space-y-1">
           <p>5.1 Under the Full Service model, Ted's Health shall maintain CQC registration and comply with all CQC fundamental standards.</p>
@@ -635,29 +757,25 @@ const AgreementDocument = forwardRef(function AgreementDocument({
         </div>
       </div>
 
-      {/* SCHEDULE 3 — Data Processing Agreement */}
+      {/* SCHEDULE 3 */}
       <div className="space-y-3 pt-8 border-t border-[#1A3D26]">
-        <h2 className="text-lg font-bold text-[#2ECC71]">SCHEDULE 3 — DATA PROCESSING AGREEMENT</h2>
+        <h2 className="text-lg font-bold text-[#2ECC71]">SCHEDULE 3 -- DATA PROCESSING AGREEMENT</h2>
         <p>This Data Processing Agreement ("DPA") forms part of the White-Label Partnership Agreement and sets out the terms on which Patient Data shall be processed.</p>
-
         <p className="mt-4"><strong>1. Scope and Roles</strong></p>
         <div className="pl-6 space-y-1">
           <p>1.1 This DPA applies to all processing of Patient Data in connection with the Agreement.</p>
           <p>1.2 The controller-processor relationship is determined by the Operating Model as set out in clause 7.2 of the Agreement.</p>
           <p>1.3 The data processor shall process Patient Data only on documented instructions from the data controller, unless required to do so by Applicable Law.</p>
         </div>
-
         <p className="mt-4"><strong>2. Categories of Data</strong></p>
         <div className="pl-6 space-y-1">
           <p>2.1 The following categories of personal data may be processed: (a) patient identity data (name, date of birth, address, contact details); (b) health data (medical history, consultation notes, prescriptions, test results); (c) identity verification data (ID document images, biometric data); and (d) payment data (billing address, payment references).</p>
           <p>2.2 The following categories of data subjects may be affected: patients, clinicians, and partner staff.</p>
         </div>
-
         <p className="mt-4"><strong>3. Processing Purposes</strong></p>
         <div className="pl-6 space-y-1">
           <p>3.1 Patient Data shall be processed solely for: (a) the provision of clinical services through the Platform; (b) patient communication and appointment management; (c) billing and revenue calculation; (d) clinical audit and quality assurance; (e) regulatory reporting; and (f) as otherwise required by Applicable Law.</p>
         </div>
-
         <p className="mt-4"><strong>4. Security Measures</strong></p>
         <div className="pl-6 space-y-1">
           <p>4.1 The data processor shall implement the following technical and organisational measures:</p>
@@ -670,7 +788,6 @@ const AgreementDocument = forwardRef(function AgreementDocument({
           <p>(g) staff security awareness training at least annually; and</p>
           <p>(h) documented incident response procedures.</p>
         </div>
-
         <p className="mt-4"><strong>5. Sub-processors</strong></p>
         <div className="pl-6 space-y-1">
           <p>5.1 The data processor shall not engage any sub-processor without the prior written consent of the data controller.</p>
@@ -678,34 +795,29 @@ const AgreementDocument = forwardRef(function AgreementDocument({
           <p>5.3 The data processor shall ensure that each sub-processor is bound by data protection obligations no less onerous than those set out in this DPA.</p>
           <p>5.4 The data processor shall notify the data controller of any intended changes to sub-processors, giving the data controller 30 days to object.</p>
         </div>
-
         <p className="mt-4"><strong>6. Data Subject Rights</strong></p>
         <div className="pl-6 space-y-1">
           <p>6.1 The data processor shall assist the data controller in responding to data subject access requests and other rights requests under UK GDPR.</p>
           <p>6.2 The data processor shall notify the data controller within 48 hours of receiving any request from a data subject directly.</p>
           <p>6.3 The data processor shall not respond to data subject requests directly unless authorised by the data controller.</p>
         </div>
-
         <p className="mt-4"><strong>7. Data Breach Notification</strong></p>
         <div className="pl-6 space-y-1">
           <p>7.1 The data processor shall notify the data controller of any personal data breach without undue delay and in any event within 24 hours.</p>
           <p>7.2 The notification shall include: (a) the nature of the breach; (b) categories and approximate number of data subjects affected; (c) likely consequences; and (d) measures taken or proposed to mitigate the breach.</p>
           <p>7.3 The data processor shall cooperate with the data controller in notifying the ICO and affected data subjects where required.</p>
         </div>
-
         <p className="mt-4"><strong>8. Data Retention and Deletion</strong></p>
         <div className="pl-6 space-y-1">
           <p>8.1 Patient Data shall be retained for the period required by Applicable Law and professional guidance, which for medical records is a minimum of 8 years from the last consultation.</p>
           <p>8.2 Upon termination of the Agreement, the data processor shall, at the choice of the data controller: (a) return all Patient Data in a commonly used electronic format; or (b) securely delete all Patient Data, and provide written certification of deletion.</p>
           <p>8.3 The obligation in 8.2 is subject to any legal requirement to retain Patient Data, in which case the data processor shall isolate and protect such data and limit processing to that required by law.</p>
         </div>
-
         <p className="mt-4"><strong>9. International Transfers</strong></p>
         <div className="pl-6 space-y-1">
           <p>9.1 Patient Data shall not be transferred outside the United Kingdom without the prior written consent of the data controller.</p>
           <p>9.2 Where international transfers are approved, the data processor shall ensure that appropriate safeguards are in place, including Standard Contractual Clauses or reliance on an adequacy decision.</p>
         </div>
-
         <p className="mt-4"><strong>10. Audit and Inspection</strong></p>
         <div className="pl-6 space-y-1">
           <p>10.1 The data processor shall make available to the data controller all information necessary to demonstrate compliance with this DPA.</p>
@@ -714,9 +826,9 @@ const AgreementDocument = forwardRef(function AgreementDocument({
         </div>
       </div>
 
-      {/* End of document */}
+      {/* End */}
       <div className="text-center pt-8 border-t border-[#1A3D26]">
-        <p className="text-xs text-[#4a7a5a]">— END OF AGREEMENT —</p>
+        <p className="text-xs text-[#4a7a5a]">-- END OF AGREEMENT --</p>
         <p className="text-xs text-[#4a7a5a] mt-1">This document is confidential. Do not distribute without written consent from Ted's Health.</p>
       </div>
     </div>
