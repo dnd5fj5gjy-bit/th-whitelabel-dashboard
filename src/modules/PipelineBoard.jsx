@@ -213,16 +213,9 @@ function PartnerCard({ partner, selected, onToggleSelect, onClick, onLogActivity
 
   return (
     <div
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.setData('text/plain', partner.id);
-        e.dataTransfer.effectAllowed = 'move';
-        onDragStart?.(partner.id);
-      }}
-      onDragEnd={onDragEnd}
       onContextMenu={handleContextMenu}
       onClick={() => onClick(partner)}
-      className={`rounded-lg border p-3 cursor-pointer transition-all duration-150 ${
+      className={`rounded-lg border p-3 cursor-pointer transition-all duration-150 relative ${
         partner.archived
           ? 'border-[#1A3D26]/50 bg-[#0F2318]/50 opacity-50'
           : partner.notCompatible
@@ -230,7 +223,7 @@ function PartnerCard({ partner, selected, onToggleSelect, onClick, onLogActivity
             : 'border-[#1A3D26] bg-[#0F2318] hover:border-[#2ECC71]/40'
       } ${selected ? 'ring-1 ring-[#2ECC71]' : ''}`}
     >
-      {/* Top row: checkbox + name — checkbox always visible */}
+      {/* Top row: checkbox + name + drag handle */}
       <div className="flex items-start gap-2">
         <div className="pt-0.5" onClick={(e) => e.stopPropagation()}>
           <input
@@ -246,7 +239,22 @@ function PartnerCard({ partner, selected, onToggleSelect, onClick, onLogActivity
         <div className="flex-1 min-w-0">
           <div className="font-semibold text-[#F0F7F2] text-sm truncate leading-tight">{partner.name}</div>
         </div>
-        <GripVertical size={14} className="text-[#1A3D26] flex-shrink-0 mt-0.5" />
+        {/* Drag handle — only this element is draggable */}
+        <div
+          draggable
+          onDragStart={(e) => {
+            e.stopPropagation();
+            e.dataTransfer.setData('text/plain', partner.id);
+            e.dataTransfer.effectAllowed = 'move';
+            onDragStart?.(partner.id);
+          }}
+          onDragEnd={(e) => { e.stopPropagation(); onDragEnd?.(); }}
+          onClick={(e) => e.stopPropagation()}
+          className="flex-shrink-0 mt-0.5 cursor-grab active:cursor-grabbing p-0.5 rounded hover:bg-[#1A3D26]"
+          title="Drag to move"
+        >
+          <GripVertical size={14} className="text-[#7DB892]" />
+        </div>
       </div>
 
       {/* Badges */}
