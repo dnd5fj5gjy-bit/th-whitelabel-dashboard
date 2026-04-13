@@ -221,7 +221,8 @@ function PartnerCard({ partner, selected, onToggleSelect, onClick, onLogActivity
       }}
       onDragEnd={onDragEnd}
       onContextMenu={handleContextMenu}
-      className={`rounded-lg border p-3 cursor-grab active:cursor-grabbing transition-all duration-150 ${
+      onClick={() => onClick(partner)}
+      className={`rounded-lg border p-3 cursor-pointer transition-all duration-150 ${
         partner.archived
           ? 'border-[#1A3D26]/50 bg-[#0F2318]/50 opacity-50'
           : partner.notCompatible
@@ -231,7 +232,7 @@ function PartnerCard({ partner, selected, onToggleSelect, onClick, onLogActivity
     >
       {/* Top row: checkbox + name — checkbox always visible */}
       <div className="flex items-start gap-2">
-        <div className="pt-0.5">
+        <div className="pt-0.5" onClick={(e) => e.stopPropagation()}>
           <input
             type="checkbox"
             checked={selected}
@@ -242,14 +243,14 @@ function PartnerCard({ partner, selected, onToggleSelect, onClick, onLogActivity
             className="w-3.5 h-3.5 rounded border-[#1A3D26] bg-[#0A1A12] accent-[#2ECC71] cursor-pointer"
           />
         </div>
-        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onClick(partner)}>
+        <div className="flex-1 min-w-0">
           <div className="font-semibold text-[#F0F7F2] text-sm truncate leading-tight">{partner.name}</div>
         </div>
         <GripVertical size={14} className="text-[#1A3D26] flex-shrink-0 mt-0.5" />
       </div>
 
       {/* Badges */}
-      <div className="flex flex-wrap gap-1.5 mt-2 cursor-pointer" onClick={() => onClick(partner)}>
+      <div className="flex flex-wrap gap-1.5 mt-2">
         <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${catColor.bg} ${catColor.text}`}>
           {partner.category}
         </span>
@@ -267,7 +268,7 @@ function PartnerCard({ partner, selected, onToggleSelect, onClick, onLogActivity
       </div>
 
       {/* Score bar + Wave */}
-      <div className="flex items-center gap-2 mt-2 cursor-pointer" onClick={() => onClick(partner)}>
+      <div className="flex items-center gap-2 mt-2">
         <div className="flex-1 h-1.5 rounded-full bg-[#0A1A12] overflow-hidden">
           <div
             className="h-full rounded-full transition-all"
