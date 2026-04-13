@@ -38,6 +38,7 @@ const MODE_COLORS = {
 
 const EMPTY_STATE_MESSAGES = {
   identified: 'Drag partners here or click + to add new ones',
+  qualified: 'Partners you\'ve qualified as viable prospects',
   contacted: 'Partners you\'ve reached out to appear here',
   replied: 'Partners who responded to your outreach',
   'call-booked': 'Partners with scheduled discovery calls',

@@ -1,4 +1,35 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, Component } from 'react';
+
+// Error boundary to prevent blank screens
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, info) {
+    console.error('Dashboard error:', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 40, background: '#0A1A12', minHeight: '100vh', color: '#F0F7F2', fontFamily: 'DM Sans, sans-serif' }}>
+          <h2 style={{ color: '#C0392B', marginBottom: 12 }}>Something went wrong</h2>
+          <p style={{ color: '#7DB892', fontSize: 14, marginBottom: 20 }}>{this.state.error?.message || 'Unknown error'}</p>
+          <button
+            onClick={() => { this.setState({ hasError: false, error: null }); window.location.reload(); }}
+            style={{ padding: '8px 20px', background: '#1A6B3C', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}
+          >
+            Reload Dashboard
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 import { StoreProvider, useStore } from './hooks/useStore.jsx';
 import Layout from './components/Layout.jsx';
 import PipelineBoard from './modules/PipelineBoard.jsx';
@@ -355,8 +386,10 @@ export default function App() {
   }
 
   return (
-    <StoreProvider>
-      <Dashboard />
-    </StoreProvider>
+    <ErrorBoundary>
+      <StoreProvider>
+        <Dashboard />
+      </StoreProvider>
+    </ErrorBoundary>
   );
 }
