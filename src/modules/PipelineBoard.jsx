@@ -16,7 +16,7 @@ import {
   Undo2,
 } from 'lucide-react';
 import { useStore } from '../hooks/useStore.jsx';
-import { PIPELINE_STAGES, PIPELINE_STAGE_LABELS, CATEGORIES, OPERATING_MODES, WAVES } from '../lib/partners.js';
+import { PIPELINE_STAGES, PIPELINE_STAGE_LABELS, CATEGORIES, OPERATING_MODES, WAVES, PRIORITIES, PRIORITY_LABELS, PRIORITY_COLORS } from '../lib/partners.js';
 import { formatDistanceToNow, differenceInDays } from 'date-fns';
 
 // Category color map
@@ -256,6 +256,14 @@ function PartnerCard({ partner, selected, onToggleSelect, onClick, onLogActivity
         <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${modeColor.bg} ${modeColor.text}`}>
           {partner.operatingMode}
         </span>
+        {partner.priority && (
+          <span
+            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold text-white"
+            style={{ backgroundColor: PRIORITY_COLORS[partner.priority] }}
+          >
+            {partner.priority === 'Warm Lead' ? 'WL' : partner.priority}
+          </span>
+        )}
       </div>
 
       {/* Score bar + Wave */}
@@ -566,8 +574,10 @@ export default function PipelineBoard({ globalSearch, onOpenProfile }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [showArchived, setShowArchived] = useState(false);
+  const [viewMode, setViewMode] = useState('pipeline'); // 'pipeline' or 'priority'
   const [draggingId, setDraggingId] = useState(null);
   const [dragOverStage, setDragOverStage] = useState(null);
+  const [dragOverPriority, setDragOverPriority] = useState(null);
   const [inlineLogPartnerId, setInlineLogPartnerId] = useState(null);
 
   // Context menu state
@@ -732,6 +742,26 @@ export default function PipelineBoard({ globalSearch, onOpenProfile }) {
           {showArchived ? 'Showing Archived' : 'Show Archived'}
         </button>
 
+        {/* View toggle */}
+        <div className="flex items-center bg-[#0F2318] rounded-md border border-[#1A3D26] overflow-hidden">
+          <button
+            onClick={() => setViewMode('pipeline')}
+            className={`px-3 py-1 text-xs font-medium transition-colors ${
+              viewMode === 'pipeline' ? 'bg-[#1A6B3C] text-white' : 'text-[#7DB892] hover:text-[#F0F7F2]'
+            }`}
+          >
+            Pipeline
+          </button>
+          <button
+            onClick={() => setViewMode('priority')}
+            className={`px-3 py-1 text-xs font-medium transition-colors ${
+              viewMode === 'priority' ? 'bg-[#1A6B3C] text-white' : 'text-[#7DB892] hover:text-[#F0F7F2]'
+            }`}
+          >
+            Priority
+          </button>
+        </div>
+
         <button
           onClick={() => setShowAddModal(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[#1A6B3C] hover:bg-[#2ECC71] text-[#F0F7F2] rounded-md font-medium"
@@ -754,9 +784,69 @@ export default function PipelineBoard({ globalSearch, onOpenProfile }) {
         </div>
       )}
 
-      {/* Kanban columns */}
+      {/* Kanban columns — Pipeline or Priority view */}
       <div className="flex-1 overflow-x-auto overflow-y-hidden px-4 py-4">
-        <div className="flex gap-3 h-full" style={{ minWidth: PIPELINE_STAGES.length * 260 }}>
+        {viewMode === 'priority' ? (
+          /* ─── PRIORITY VIEW ─────────────────────────────────────────── */
+          <div className="flex gap-3 h-full" style={{ minWidth: PRIORITIES.length * 300 }}>
+            {PRIORITIES.map((priority) => {
+              const cards = filteredPartners.filter(p => p.priority === priority && !p.archived);
+              const isOver = dragOverPriority === priority;
+              const color = PRIORITY_COLORS[priority];
+              return (
+                <div
+                  key={priority}
+                  className={`flex flex-col w-[300px] flex-shrink-0 rounded-lg border transition-colors ${
+                    isOver ? 'bg-opacity-10' : 'bg-[#0A1A12]/50'
+                  }`}
+                  style={{ borderColor: isOver ? color : '#1A3D26' }}
+                  onDragOver={(e) => { e.preventDefault(); setDragOverPriority(priority); }}
+                  onDragLeave={() => setDragOverPriority(null)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOverPriority(null);
+                    if (draggingId) {
+                      updatePartner(draggingId, { priority });
+                      setDraggingId(null);
+                    }
+                  }}
+                >
+                  <div className="flex items-center justify-between px-3 py-2.5 border-b" style={{ borderColor: '#1A3D26' }}>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
+                      <span className="text-xs font-semibold text-[#F0F7F2] uppercase tracking-wider">
+                        {PRIORITY_LABELS[priority]}
+                      </span>
+                    </div>
+                    <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-[#0F2318] text-[#7DB892]">
+                      {cards.length}
+                    </span>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+                    {cards.map((p) => (
+                      <PartnerCard
+                        key={p.id}
+                        partner={p}
+                        selected={selectedIds.has(p.id)}
+                        onToggleSelect={toggleSelect}
+                        onClick={(partner) => onOpenProfile?.(partner.id)}
+                        onDragStart={handleDragStart}
+                        onLogActivity={(id) => setInlineLogPartnerId(id)}
+                      />
+                    ))}
+                    {cards.length === 0 && (
+                      <div className="text-center py-8 text-xs text-[#7DB892]/50">
+                        Drag partners here to assign {PRIORITY_LABELS[priority]}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          /* ─── PIPELINE VIEW ─────────────────────────────────────────── */
+          <div className="flex gap-3 h-full" style={{ minWidth: PIPELINE_STAGES.length * 260 }}>
           {PIPELINE_STAGES.map((stage) => {
             const cards = columns[stage] || [];
             const isOver = dragOverStage === stage;
@@ -809,7 +899,8 @@ export default function PipelineBoard({ globalSearch, onOpenProfile }) {
               </div>
             );
           })}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Add Partner Modal */}

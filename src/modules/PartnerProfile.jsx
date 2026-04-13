@@ -28,6 +28,9 @@ import { useStore } from '../hooks/useStore.jsx';
 import {
   PIPELINE_STAGES,
   PIPELINE_STAGE_LABELS,
+  PRIORITIES,
+  PRIORITY_LABELS,
+  PRIORITY_COLORS,
   CATEGORIES,
   OPERATING_MODES,
   WAVES,
@@ -415,6 +418,39 @@ export default function PartnerProfile({ partner, onClose, onNavigate }) {
                   </button>
                 );
               })}
+            </div>
+          </div>
+
+          {/* Priority selector */}
+          <div className="px-5 py-3 border-b border-[#1A3D26]">
+            <label className="block text-[10px] uppercase tracking-wider text-[#7DB892] mb-2">Priority</label>
+            <div className="flex flex-wrap gap-1.5">
+              {PRIORITIES.map((p) => {
+                const isActive = partner.priority === p;
+                const color = PRIORITY_COLORS[p];
+                return (
+                  <button
+                    key={p}
+                    onClick={() => updatePartner(partner.id, { priority: isActive ? null : p })}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all border ${
+                      isActive
+                        ? 'text-white'
+                        : 'bg-[#0F2318] text-[#7DB892] border-[#1A3D26] hover:text-[#F0F7F2]'
+                    }`}
+                    style={isActive ? { backgroundColor: color, borderColor: color } : undefined}
+                  >
+                    {PRIORITY_LABELS[p]}
+                  </button>
+                );
+              })}
+              {partner.priority && (
+                <button
+                  onClick={() => updatePartner(partner.id, { priority: null })}
+                  className="px-2 py-1 rounded-full text-[10px] text-[#7DB892] hover:text-[#C0392B] transition-colors"
+                >
+                  Clear
+                </button>
+              )}
             </div>
           </div>
 

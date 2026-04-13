@@ -121,6 +121,7 @@ export const OPERATING_MODES = ['FULL', 'PLATFORM', 'CHECK'];
 
 export const PIPELINE_STAGES = [
   'identified',
+  'qualified',
   'contacted',
   'replied',
   'call-booked',
@@ -132,6 +133,7 @@ export const PIPELINE_STAGES = [
 
 export const PIPELINE_STAGE_LABELS = {
   'identified': 'Identified',
+  'qualified': 'Qualified',
   'contacted': 'Contacted',
   'replied': 'Replied',
   'call-booked': 'Call Booked',
@@ -139,6 +141,22 @@ export const PIPELINE_STAGE_LABELS = {
   'negotiating': 'Negotiating',
   'signed': 'Signed',
   'dead': 'Dead',
+};
+
+export const PRIORITIES = ['P1', 'P2', 'P3', 'Warm Lead'];
+
+export const PRIORITY_LABELS = {
+  'P1': 'Priority 1',
+  'P2': 'Priority 2',
+  'P3': 'Priority 3',
+  'Warm Lead': 'Warm Lead',
+};
+
+export const PRIORITY_COLORS = {
+  'P1': '#EF4444',
+  'P2': '#F59E0B',
+  'P3': '#3B82F6',
+  'Warm Lead': '#10B981',
 };
 
 export const WAVES = ['W1', 'W2', 'W3'];
