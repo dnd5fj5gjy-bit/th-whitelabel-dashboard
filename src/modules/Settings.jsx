@@ -4,11 +4,15 @@ import storage from '../lib/storage.js';
 import { askClaude } from '../lib/ai';
 import {
   Settings as SettingsIcon, Eye, EyeOff, Save, Check, Key, Building2, Mail,
-  Loader2, AlertTriangle, Users, FileText, MessageSquare, Download, Trash2, Database
+  Loader2, AlertTriangle, Users, FileText, MessageSquare, Download, Trash2, Database,
+  Wifi, WifiOff, RefreshCw, Unplug, Server
 } from 'lucide-react';
 
 export default function Settings() {
-  const { settings, updateSettings, partners } = useStore();
+  const {
+    settings, updateSettings, partners,
+    isServerMode, serverConnected, connectToServer, disconnectFromServer, syncNow,
+  } = useStore();
 
   const [apiKey, setApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
@@ -27,6 +31,13 @@ export default function Settings() {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetInput, setResetInput] = useState('');
 
+  // Server connection state
+  const [serverUrl, setServerUrl] = useState('');
+  const [serverApiKey, setServerApiKey] = useState('');
+  const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState('');
+  const [syncing, setSyncing] = useState(false);
+
   useEffect(() => {
     if (settings) {
       setApiKey(settings.apiKey || '');
@@ -36,6 +47,14 @@ export default function Settings() {
       setContactEmail(settings.contactEmail || 'partnerships@tedshealth.com');
     }
   }, [settings]);
+
+  // Load server config from localStorage
+  useEffect(() => {
+    const savedUrl = storage.get('serverUrl', '');
+    const savedKey = storage.get('serverApiKey', '');
+    if (savedUrl) setServerUrl(savedUrl);
+    if (savedKey) setServerApiKey(savedKey);
+  }, []);
 
   // Data stats
   const dataStats = useMemo(() => {
@@ -86,6 +105,31 @@ export default function Settings() {
     }
   }
 
+  async function handleConnect() {
+    if (!serverUrl) return;
+    setConnecting(true);
+    setConnectError('');
+
+    const result = await connectToServer(serverUrl, serverApiKey);
+
+    if (!result.success) {
+      setConnectError(result.error || 'Connection failed');
+    }
+
+    setConnecting(false);
+  }
+
+  function handleDisconnect() {
+    disconnectFromServer();
+    setConnectError('');
+  }
+
+  async function handleSyncNow() {
+    setSyncing(true);
+    await syncNow();
+    setSyncing(false);
+  }
+
   function handleExportCSV() {
     const active = partners.filter(p => !p.archived && !p.notCompatible);
     const headers = ['Name', 'Category', 'Operating Mode', 'Score', 'Wave', 'Pipeline Stage', 'Agreement Status', 'Contact Name', 'Contact Email', 'Interactions'];
@@ -129,7 +173,113 @@ export default function Settings() {
         </div>
         <div>
           <h1 className="text-xl font-semibold text-[#F0F7F2]">Settings</h1>
-          <p className="text-sm text-[#7DB892]">API configuration, company details, and data management</p>
+          <p className="text-sm text-[#7DB892]">Server connection, API configuration, company details, and data management</p>
+        </div>
+      </div>
+
+      {/* Server Connection */}
+      <div className="rounded-lg border border-[#1A3D26] bg-[#0F2318] p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Server size={16} className="text-[#2ECC71]" />
+            <h2 className="text-sm font-semibold text-[#F0F7F2]">Server Connection</h2>
+          </div>
+          <div className="flex items-center gap-2">
+            <span
+              className={`w-2.5 h-2.5 rounded-full ${
+                serverConnected ? 'bg-[#2ECC71] shadow-[0_0_6px_#2ECC71]' :
+                isServerMode ? 'bg-[#F59E0B]' :
+                'bg-[#C0392B]'
+              }`}
+            />
+            <span className="text-xs text-[#7DB892]">
+              {serverConnected ? 'Connected' : isServerMode ? 'Reconnecting...' : 'Disconnected'}
+            </span>
+          </div>
+        </div>
+
+        <p className="text-xs text-[#7DB892]">
+          Connect to the sync server for real-time collaborative access. All changes are synced instantly across all connected users.
+        </p>
+
+        <div>
+          <label className="block text-xs text-[#7DB892] mb-1">Server URL</label>
+          <input
+            type="text"
+            value={serverUrl}
+            onChange={e => setServerUrl(e.target.value)}
+            placeholder="https://your-tunnel.trycloudflare.com"
+            disabled={isServerMode}
+            className="w-full bg-[#0A1A12] border border-[#1A3D26] rounded-md px-3 py-2 text-sm text-[#F0F7F2] font-mono placeholder:text-[#4a7a5a] disabled:opacity-50"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs text-[#7DB892] mb-1">Server API Key</label>
+          <input
+            type="password"
+            value={serverApiKey}
+            onChange={e => setServerApiKey(e.target.value)}
+            placeholder="th-api-2026"
+            disabled={isServerMode}
+            className="w-full bg-[#0A1A12] border border-[#1A3D26] rounded-md px-3 py-2 text-sm text-[#F0F7F2] font-mono placeholder:text-[#4a7a5a] disabled:opacity-50"
+          />
+        </div>
+
+        {connectError && (
+          <div className="flex items-center gap-2 text-xs text-[#C0392B]">
+            <AlertTriangle size={12} />
+            <span>{connectError.length > 80 ? connectError.slice(0, 80) + '...' : connectError}</span>
+          </div>
+        )}
+
+        <div className="flex items-center gap-3">
+          {!isServerMode ? (
+            <button
+              onClick={handleConnect}
+              disabled={!serverUrl || connecting}
+              className="flex items-center gap-2 px-4 py-2 rounded-md text-sm bg-[#1A6B3C] hover:bg-[#2ECC71]/80 text-[#F0F7F2] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {connecting ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  Connecting...
+                </>
+              ) : (
+                <>
+                  <Wifi size={14} />
+                  Connect
+                </>
+              )}
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={handleDisconnect}
+                className="flex items-center gap-2 px-4 py-2 rounded-md text-sm border border-[#C0392B]/40 text-[#C0392B] hover:bg-[#C0392B]/10 transition-colors"
+              >
+                <Unplug size={14} />
+                Disconnect
+              </button>
+              <button
+                onClick={handleSyncNow}
+                disabled={syncing}
+                className="flex items-center gap-2 px-4 py-2 rounded-md text-sm bg-[#1A3D26] hover:bg-[#1A6B3C] text-[#F0F7F2] transition-colors disabled:opacity-40"
+              >
+                {syncing ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    Syncing...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw size={14} />
+                    Sync Now
+                  </>
+                )}
+              </button>
+            </>
+          )}
         </div>
       </div>
 

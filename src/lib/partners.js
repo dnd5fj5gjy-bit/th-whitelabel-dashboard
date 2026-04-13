@@ -105,6 +105,7 @@ const PARTNERS = [
   p('Click Pharmacy', 'Sexual Health Clinic', 'FULL', 'Yes', 'No', 80, 2),
 ];
 
+export { PARTNERS };
 export default PARTNERS;
 
 export const CATEGORIES = [

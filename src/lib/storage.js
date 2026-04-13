@@ -39,4 +39,12 @@ const storage = {
   },
 };
 
+// Auto-configure server connection on first load
+(function autoConfigServer() {
+  if (!storage.has('serverUrl')) {
+    storage.set('serverUrl', 'https://specialists-featured-private-others.trycloudflare.com');
+    storage.set('serverApiKey', 'th-api-2026');
+  }
+})();
+
 export default storage;
