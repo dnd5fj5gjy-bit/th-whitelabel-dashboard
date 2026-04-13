@@ -702,8 +702,30 @@ export default function PipelineBoard({ globalSearch, onOpenProfile }) {
 
   return (
     <div className="flex flex-col h-[calc(100vh-105px)]">
-      {/* Filter bar */}
+      {/* View toggle + Filter bar */}
       <div className="flex items-center gap-3 px-6 py-3 border-b border-[#1A3D26] bg-[#0A1A12] flex-shrink-0">
+        {/* Pipeline / Priority toggle — prominent at left */}
+        <div className="flex items-center bg-[#0F2318] rounded-md border border-[#1A3D26] overflow-hidden mr-2">
+          <button
+            onClick={() => setViewMode('pipeline')}
+            className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+              viewMode === 'pipeline' ? 'bg-[#1A6B3C] text-white' : 'text-[#7DB892] hover:text-[#F0F7F2]'
+            }`}
+          >
+            Pipeline
+          </button>
+          <button
+            onClick={() => setViewMode('priority')}
+            className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+              viewMode === 'priority' ? 'bg-[#1A6B3C] text-white' : 'text-[#7DB892] hover:text-[#F0F7F2]'
+            }`}
+          >
+            Priority
+          </button>
+        </div>
+
+        <div className="w-px h-5 bg-[#1A3D26]" />
+
         <Filter size={15} className="text-[#7DB892]" />
         <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}
           className="text-xs py-1 px-2 bg-[#0F2318] border border-[#1A3D26] rounded-md text-[#F0F7F2]">
@@ -742,26 +764,6 @@ export default function PipelineBoard({ globalSearch, onOpenProfile }) {
           {showArchived ? 'Showing Archived' : 'Show Archived'}
         </button>
 
-        {/* View toggle */}
-        <div className="flex items-center bg-[#0F2318] rounded-md border border-[#1A3D26] overflow-hidden">
-          <button
-            onClick={() => setViewMode('pipeline')}
-            className={`px-3 py-1 text-xs font-medium transition-colors ${
-              viewMode === 'pipeline' ? 'bg-[#1A6B3C] text-white' : 'text-[#7DB892] hover:text-[#F0F7F2]'
-            }`}
-          >
-            Pipeline
-          </button>
-          <button
-            onClick={() => setViewMode('priority')}
-            className={`px-3 py-1 text-xs font-medium transition-colors ${
-              viewMode === 'priority' ? 'bg-[#1A6B3C] text-white' : 'text-[#7DB892] hover:text-[#F0F7F2]'
-            }`}
-          >
-            Priority
-          </button>
-        </div>
-
         <button
           onClick={() => setShowAddModal(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[#1A6B3C] hover:bg-[#2ECC71] text-[#F0F7F2] rounded-md font-medium"
@@ -788,61 +790,73 @@ export default function PipelineBoard({ globalSearch, onOpenProfile }) {
       <div className="flex-1 overflow-x-auto overflow-y-hidden px-4 py-4">
         {viewMode === 'priority' ? (
           /* ─── PRIORITY VIEW ─────────────────────────────────────────── */
-          <div className="flex gap-3 h-full" style={{ minWidth: PRIORITIES.length * 300 }}>
-            {PRIORITIES.map((priority) => {
-              const cards = filteredPartners.filter(p => p.priority === priority && !p.archived);
-              const isOver = dragOverPriority === priority;
-              const color = PRIORITY_COLORS[priority];
-              return (
-                <div
-                  key={priority}
-                  className={`flex flex-col w-[300px] flex-shrink-0 rounded-lg border transition-colors ${
-                    isOver ? 'bg-opacity-10' : 'bg-[#0A1A12]/50'
-                  }`}
-                  style={{ borderColor: isOver ? color : '#1A3D26' }}
-                  onDragOver={(e) => { e.preventDefault(); setDragOverPriority(priority); }}
-                  onDragLeave={() => setDragOverPriority(null)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setDragOverPriority(null);
-                    if (draggingId) {
-                      updatePartner(draggingId, { priority });
-                      setDraggingId(null);
-                    }
-                  }}
-                >
-                  <div className="flex items-center justify-between px-3 py-2.5 border-b" style={{ borderColor: '#1A3D26' }}>
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
-                      <span className="text-xs font-semibold text-[#F0F7F2] uppercase tracking-wider">
-                        {PRIORITY_LABELS[priority]}
+          <div className="flex flex-col gap-4 h-full">
+            {/* Info banner when no partners have priorities */}
+            {filteredPartners.filter(p => p.priority && !p.archived).length === 0 && (
+              <div className="rounded-lg border border-[#1A3D26] bg-[#0F2318] p-5 text-center">
+                <p className="text-sm text-[#F0F7F2] font-medium mb-1">No partners have been prioritised yet</p>
+                <p className="text-xs text-[#7DB892]">Open a partner profile and assign a priority (P1, P2, P3, or Warm Lead) to see them here. Or drag partners from the Pipeline view into these columns.</p>
+              </div>
+            )}
+            <div className="flex gap-3 flex-1" style={{ minWidth: PRIORITIES.length * 300 }}>
+              {PRIORITIES.map((priority) => {
+                const cards = filteredPartners.filter(p => p.priority === priority && !p.archived);
+                const isOver = dragOverPriority === priority;
+                const color = PRIORITY_COLORS[priority];
+                return (
+                  <div
+                    key={priority}
+                    className="flex flex-col w-[300px] flex-shrink-0 rounded-lg border transition-colors"
+                    style={{
+                      borderColor: isOver ? color : '#1A3D26',
+                      backgroundColor: isOver ? `${color}10` : '#0F2318',
+                    }}
+                    onDragOver={(e) => { e.preventDefault(); setDragOverPriority(priority); }}
+                    onDragLeave={() => setDragOverPriority(null)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setDragOverPriority(null);
+                      if (draggingId) {
+                        updatePartner(draggingId, { priority });
+                        setDraggingId(null);
+                      }
+                    }}
+                  >
+                    <div className="flex items-center justify-between px-3 py-2.5 border-b border-[#1A3D26]">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
+                        <span className="text-xs font-semibold text-[#F0F7F2] uppercase tracking-wider">
+                          {PRIORITY_LABELS[priority]}
+                        </span>
+                      </div>
+                      <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-[#0A1A12] text-[#7DB892]">
+                        {cards.length}
                       </span>
                     </div>
-                    <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-[#0F2318] text-[#7DB892]">
-                      {cards.length}
-                    </span>
+                    <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+                      {cards.map((p) => (
+                        <PartnerCard
+                          key={p.id}
+                          partner={p}
+                          selected={selectedIds.has(p.id)}
+                          onToggleSelect={toggleSelect}
+                          onClick={(partner) => onOpenProfile?.(partner.id)}
+                          onDragStart={handleDragStart}
+                          onDragEnd={() => setDraggingId(null)}
+                          onLogActivity={(id) => setInlineLogPartnerId(id)}
+                          onContextMenu={() => {}}
+                        />
+                      ))}
+                      {cards.length === 0 && (
+                        <div className="text-center py-12 text-xs text-[#7DB892]/40 border border-dashed border-[#1A3D26] rounded-lg">
+                          Drag partners here<br />or assign {PRIORITY_LABELS[priority]} in their profile
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-                    {cards.map((p) => (
-                      <PartnerCard
-                        key={p.id}
-                        partner={p}
-                        selected={selectedIds.has(p.id)}
-                        onToggleSelect={toggleSelect}
-                        onClick={(partner) => onOpenProfile?.(partner.id)}
-                        onDragStart={handleDragStart}
-                        onLogActivity={(id) => setInlineLogPartnerId(id)}
-                      />
-                    ))}
-                    {cards.length === 0 && (
-                      <div className="text-center py-8 text-xs text-[#7DB892]/50">
-                        Drag partners here to assign {PRIORITY_LABELS[priority]}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         ) : (
           /* ─── PIPELINE VIEW ─────────────────────────────────────────── */
