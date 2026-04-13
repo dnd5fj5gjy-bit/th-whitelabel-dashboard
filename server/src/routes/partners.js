@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getAllPartners, getPartner, upsertPartner, deletePartner as dbDeletePartner, bulkUpsertPartners } from '../db.js';
-import { broadcast } from '../sse.js';
+import { bumpVersion } from '../index.js';
 
 const router = Router();
 
@@ -31,7 +31,7 @@ router.get('/:id', (req, res) => {
 router.put('/:id', (req, res) => {
   try {
     const merged = upsertPartner(req.params.id, req.body);
-    broadcast('partner-updated', merged);
+    bumpVersion(); // broadcast('partner-updated', merged);
     res.json(merged);
   } catch (e) {
     console.error('PUT /api/partners/:id error:', e);
@@ -47,7 +47,7 @@ router.post('/', (req, res) => {
       data.id = `p-${Date.now()}`;
     }
     const partner = upsertPartner(data.id, data);
-    broadcast('partner-updated', partner);
+    bumpVersion(); // broadcast('partner-updated', partner);
     res.status(201).json(partner);
   } catch (e) {
     console.error('POST /api/partners error:', e);
@@ -59,7 +59,7 @@ router.post('/', (req, res) => {
 router.delete('/:id', (req, res) => {
   try {
     dbDeletePartner(req.params.id);
-    broadcast('partner-updated', { id: req.params.id, deleted: true });
+    bumpVersion(); // broadcast('partner-updated', { id: req.params.id, deleted: true });
     res.json({ ok: true });
   } catch (e) {
     console.error('DELETE /api/partners/:id error:', e);
@@ -75,7 +75,7 @@ router.post('/bulk', (req, res) => {
       return res.status(400).json({ error: 'Body must be an array of partners' });
     }
     bulkUpsertPartners(partners);
-    broadcast('bulk-sync', { count: partners.length });
+    bumpVersion(); // broadcast('bulk-sync', { count: partners.length });
     res.json({ ok: true, count: partners.length });
   } catch (e) {
     console.error('POST /api/partners/bulk error:', e);

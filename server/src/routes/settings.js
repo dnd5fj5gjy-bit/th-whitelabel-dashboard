@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getSettings, updateSettings as dbUpdateSettings } from '../db.js';
-import { broadcast } from '../sse.js';
+import { bumpVersion } from '../index.js';
 
 const router = Router();
 
@@ -19,7 +19,7 @@ router.get('/', (req, res) => {
 router.put('/', (req, res) => {
   try {
     const updated = dbUpdateSettings(req.body);
-    broadcast('settings-updated', updated);
+    bumpVersion();
     res.json(updated);
   } catch (e) {
     console.error('PUT /api/settings error:', e);

@@ -59,113 +59,63 @@ export function StoreProvider({ children }) {
   const [isServerMode, setIsServerMode] = useState(false);
   const [serverConnected, setServerConnected] = useState(false);
 
-  // Ref to track whether an update came from SSE (to avoid re-triggering API calls)
-  const sseUpdateRef = useRef(false);
-  const eventSourceRef = useRef(null);
-  const reconnectTimerRef = useRef(null);
+  // Ref to track whether an update came from polling (to avoid re-triggering API calls)
+  const pollUpdateRef = useRef(false);
+  const pollTimerRef = useRef(null);
+  const lastVersionRef = useRef(0);
 
-  // --- SSE Connection ---
+  // --- Polling-based sync (works reliably through Cloudflare Tunnel) ---
 
-  const connectSSE = useCallback((serverUrl) => {
-    // Close existing connection
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
+  const startPolling = useCallback((serverUrl) => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
     }
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-
     if (!serverUrl) return;
 
     const url = serverUrl.replace(/\/+$/, '');
-    const es = new EventSource(`${url}/api/events`);
-    eventSourceRef.current = es;
+    const { apiKey } = getServerConfig();
 
-    es.addEventListener('connected', () => {
-      setServerConnected(true);
-      console.log('[SSE] Connected');
-    });
-
-    es.addEventListener('partner-updated', (e) => {
+    const poll = async () => {
       try {
-        const data = JSON.parse(e.data);
-        sseUpdateRef.current = true;
-
-        if (data.deleted) {
-          // Remove partner
-          setPartners((prev) => {
-            const next = prev.filter((p) => p.id !== data.id);
-            storage.set('partners', next);
-            return next;
-          });
-        } else {
-          // Upsert partner
-          setPartners((prev) => {
-            const idx = prev.findIndex((p) => p.id === data.id);
-            let next;
-            if (idx >= 0) {
-              next = [...prev];
-              next[idx] = { ...next[idx], ...data };
-            } else {
-              next = [...prev, data];
-            }
-            storage.set('partners', next);
-            return next;
-          });
-        }
-
-        // Reset the flag after the state update tick
-        setTimeout(() => { sseUpdateRef.current = false; }, 0);
-      } catch (err) {
-        console.warn('[SSE] partner-updated parse error:', err);
-      }
-    });
-
-    es.addEventListener('settings-updated', (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        sseUpdateRef.current = true;
-        setSettings((prev) => {
-          const next = { ...prev, ...data };
-          storage.set('settings', next);
-          return next;
+        const res = await fetch(`${url}/api/sync?v=${lastVersionRef.current}`, {
+          headers: { 'X-API-Key': apiKey },
         });
-        setTimeout(() => { sseUpdateRef.current = false; }, 0);
-      } catch (err) {
-        console.warn('[SSE] settings-updated parse error:', err);
-      }
-    });
+        if (!res.ok) {
+          setServerConnected(false);
+          return;
+        }
+        const data = await res.json();
+        setServerConnected(true);
 
-    es.addEventListener('bulk-sync', () => {
-      // Refetch all partners from server
-      const { apiKey } = getServerConfig();
-      fetch(`${url}/api/partners`, {
-        headers: { 'X-API-Key': apiKey },
-      })
-        .then((r) => r.json())
-        .then((data) => {
-          if (Array.isArray(data)) {
-            sseUpdateRef.current = true;
-            setPartners(data);
-            storage.set('partners', data);
-            setTimeout(() => { sseUpdateRef.current = false; }, 0);
+        if (data.changed && data.partners) {
+          pollUpdateRef.current = true;
+          lastVersionRef.current = data.version;
+          setPartners(data.partners);
+          storage.set('partners', data.partners);
+          if (data.settings && typeof data.settings === 'object') {
+            setSettings((prev) => ({ ...prev, ...data.settings }));
+            storage.set('settings', data.settings);
           }
-        })
-        .catch((err) => console.warn('[SSE] bulk-sync refetch error:', err));
-    });
-
-    es.onerror = () => {
-      setServerConnected(false);
-      es.close();
-      eventSourceRef.current = null;
-      // Reconnect after 3 seconds
-      reconnectTimerRef.current = setTimeout(() => {
-        console.log('[SSE] Reconnecting...');
-        connectSSE(serverUrl);
-      }, 3000);
+          setTimeout(() => { pollUpdateRef.current = false; }, 0);
+        } else if (data.version) {
+          lastVersionRef.current = data.version;
+        }
+      } catch {
+        setServerConnected(false);
+      }
     };
+
+    // Poll immediately, then every 3 seconds
+    poll();
+    pollTimerRef.current = setInterval(poll, 3000);
+  }, []);
+
+  const stopPolling = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
   }, []);
 
   // --- Server connect/disconnect ---
@@ -207,7 +157,7 @@ export function StoreProvider({ children }) {
       }
 
       setIsServerMode(true);
-      connectSSE(serverUrl);
+      startPolling(serverUrl);
       return { success: true };
     } catch (e) {
       console.error('[server] Connect failed:', e);
@@ -215,22 +165,15 @@ export function StoreProvider({ children }) {
       setServerConnected(false);
       return { success: false, error: e.message };
     }
-  }, [connectSSE]);
+  }, [startPolling]);
 
   const disconnectFromServer = useCallback(() => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-    }
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
+    stopPolling();
     storage.remove('serverUrl');
     storage.remove('serverApiKey');
     setIsServerMode(false);
     setServerConnected(false);
-  }, []);
+  }, [stopPolling]);
 
   const syncNow = useCallback(async () => {
     const { url, apiKey } = getServerConfig();
@@ -273,11 +216,8 @@ export function StoreProvider({ children }) {
     }
 
     return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
-      if (reconnectTimerRef.current) {
-        clearTimeout(reconnectTimerRef.current);
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current);
       }
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -320,7 +260,7 @@ export function StoreProvider({ children }) {
     });
 
     // Sync to server (unless this was triggered by SSE)
-    if (isServerMode && !sseUpdateRef.current) {
+    if (isServerMode && !pollUpdateRef.current) {
       apiFireAndForget(`/api/partners/${id}`, {
         method: 'PUT',
         body: JSON.stringify(updates),
@@ -372,7 +312,7 @@ export function StoreProvider({ children }) {
       storage.set('partners', next);
 
       // Sync the full partner to server
-      if (isServerMode && !sseUpdateRef.current) {
+      if (isServerMode && !pollUpdateRef.current) {
         const updated = next.find((p) => p.id === partnerId);
         if (updated) {
           apiFireAndForget(`/api/partners/${partnerId}`, {
@@ -401,7 +341,7 @@ export function StoreProvider({ children }) {
       );
       storage.set('partners', next);
 
-      if (isServerMode && !sseUpdateRef.current) {
+      if (isServerMode && !pollUpdateRef.current) {
         const updated = next.find((p) => p.id === partnerId);
         if (updated) {
           apiFireAndForget(`/api/partners/${partnerId}`, {
@@ -424,7 +364,7 @@ export function StoreProvider({ children }) {
       );
       storage.set('partners', next);
 
-      if (isServerMode && !sseUpdateRef.current) {
+      if (isServerMode && !pollUpdateRef.current) {
         const updated = next.find((p) => p.id === partnerId);
         if (updated) {
           apiFireAndForget(`/api/partners/${partnerId}`, {
@@ -543,7 +483,7 @@ export function StoreProvider({ children }) {
       return next;
     });
 
-    if (isServerMode && !sseUpdateRef.current) {
+    if (isServerMode && !pollUpdateRef.current) {
       apiFireAndForget('/api/settings', {
         method: 'PUT',
         body: JSON.stringify(data),

@@ -3,23 +3,30 @@
 const clients = new Set();
 
 export function addClient(req, res) {
-  // Configure SSE headers
+  // Configure SSE headers — disable all buffering for Cloudflare Tunnel
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
+    'Cache-Control': 'no-cache, no-transform',
     'Connection': 'keep-alive',
-    'X-Accel-Buffering': 'no', // Disable nginx/cloudflare buffering
+    'X-Accel-Buffering': 'no',
+    'Transfer-Encoding': 'identity',
   });
+  res.flushHeaders();
 
   // Send initial connected event
   res.write(`event: connected\ndata: ${JSON.stringify({ status: 'ok', time: Date.now() })}\n\n`);
 
   clients.add(res);
 
-  // Send keepalive every 30s to prevent timeout through tunnels
+  // Send keepalive every 15s to prevent Cloudflare Tunnel timeout
   const keepalive = setInterval(() => {
-    res.write(': keepalive\n\n');
-  }, 30000);
+    try {
+      res.write(`: keepalive ${Date.now()}\n\n`);
+    } catch {
+      clearInterval(keepalive);
+      clients.delete(res);
+    }
+  }, 15000);
 
   // Clean up on disconnect
   req.on('close', () => {

@@ -1,14 +1,20 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import { initTables } from './db.js';
-import { addClient, getClientCount } from './sse.js';
+import { initTables, getAllPartners, getSettings } from './db.js';
 import partnersRouter from './routes/partners.js';
 import settingsRouter from './routes/settings.js';
 
 const app = express();
 const PORT = process.env.PORT || 5183;
 const API_KEY = process.env.API_KEY || 'th-api-2026';
+
+// Global version counter — increments on every data change
+let dataVersion = Date.now();
+
+export function bumpVersion() {
+  dataVersion = Date.now();
+}
 
 // CORS: allow all origins (API key protects the data)
 app.use(cors());
@@ -21,21 +27,39 @@ app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     uptime: process.uptime(),
-    clients: getClientCount(),
+    version: dataVersion,
     time: new Date().toISOString(),
   });
 });
 
-// SSE endpoint — no auth needed, just streams events
-app.get('/api/events', (req, res) => {
-  addClient(req, res);
+// Sync polling endpoint — client sends its last known version,
+// server returns current version + full data if changed
+app.get('/api/sync', (req, res) => {
+  const key = req.headers['x-api-key'];
+  if (key !== API_KEY) {
+    return res.status(401).json({ error: 'Invalid API key' });
+  }
+
+  const clientVersion = parseInt(req.query.v) || 0;
+
+  if (clientVersion >= dataVersion) {
+    // No changes
+    return res.json({ changed: false, version: dataVersion });
+  }
+
+  // Data has changed — return everything
+  const partners = getAllPartners();
+  const settings = getSettings();
+  res.json({
+    changed: true,
+    version: dataVersion,
+    partners,
+    settings,
+  });
 });
 
-// API key middleware for all other /api/* routes
+// API key middleware for /api/* routes
 app.use('/api', (req, res, next) => {
-  // Skip SSE endpoint (already handled above)
-  if (req.path === '/events') return next();
-
   const key = req.headers['x-api-key'];
   if (key !== API_KEY) {
     return res.status(401).json({ error: 'Invalid API key' });
