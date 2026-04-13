@@ -263,15 +263,16 @@ function PartnerCard({ partner, selected, onToggleSelect, onClick, onLogActivity
         <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${catColor.bg} ${catColor.text}`}>
           {partner.category}
         </span>
-        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${modeColor.bg} ${modeColor.text}`}>
-          {partner.operatingMode}
-        </span>
-        {partner.priority && (
+        {partner.priority ? (
           <span
             className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold text-white"
             style={{ backgroundColor: PRIORITY_COLORS[partner.priority] }}
           >
-            {partner.priority === 'Warm Lead' ? 'WL' : partner.priority}
+            {PRIORITY_LABELS[partner.priority]}
+          </span>
+        ) : (
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#0A1A12] text-[#7DB892]/50 border border-[#1A3D26]">
+            No Priority
           </span>
         )}
       </div>
