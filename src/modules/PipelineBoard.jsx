@@ -852,10 +852,10 @@ export default function PipelineBoard({ globalSearch, onOpenProfile }) {
                           selected={selectedIds.has(p.id)}
                           onToggleSelect={toggleSelect}
                           onClick={(partner) => onOpenProfile?.(partner.id)}
-                          onDragStart={handleDragStart}
-                          onDragEnd={() => setDraggingId(null)}
+                          onDragStart={(id) => setDraggingId(id)}
+                          onDragEnd={() => { setDraggingId(null); setDragOverPriority(null); }}
                           onLogActivity={(id) => setInlineLogPartnerId(id)}
-                          onContextMenu={() => {}}
+                          onContextMenu={(e) => e?.preventDefault?.()}
                         />
                       ))}
                       {cards.length === 0 && (
